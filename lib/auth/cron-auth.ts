@@ -21,6 +21,9 @@ export function timingSafeStringEqual(a: string, b: string): boolean {
  *
  * Fail-closed: se nenhum secret estiver configurado no ambiente ou nenhum token for fornecido,
  * recusa imediatamente com false.
+ *
+ * Portão único das rotas de `app/api/v1/cron/`: reimplementar a checagem na rota faz o
+ * `tests/unit/cron-aceita-os-dois-segredos.test.ts` reprovar.
  */
 export function autorizaCron(req: NextRequest): boolean {
   const auth = req.headers.get("authorization") ?? "";

@@ -63,4 +63,21 @@ describe("autenticação das rotas de cron", () => {
   it("o inventário não está vazio — senão os dois casos acima passam por vacuidade", () => {
     expect(rotasDeCron().length).toBeGreaterThan(20);
   });
+
+  it("toda rota de cron usa o portão compartilhado", () => {
+    // As duas cercas acima garantem que os DOIS segredos são conferidos, mas
+    // aceitam que cada rota mantenha a própria cópia da checagem — foi assim
+    // que 22 cópias, em quatro formatos, conviveram até a do `sync-model-catalog`
+    // envelhecer sozinha e responder 401 por um ano. Esta cerca exige o portão
+    // único: a próxima rota nasce usando `autorizaCron()` ou o CI reprova.
+    const foraDoPortao = rotasDeCron()
+      .filter((r) => !r.fonte.includes("autorizaCron("))
+      .map((r) => r.nome);
+
+    expect(
+      foraDoPortao,
+      `Rota(s) de cron que não usam o portão compartilhado: ${foraDoPortao.join(", ")}. ` +
+        "Chame autorizaCron() de lib/auth/cron-auth.ts em vez de reimplementar a checagem.",
+    ).toEqual([]);
+  });
 });

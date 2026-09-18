@@ -29,6 +29,7 @@
  *   passa por `fundirTokens` antes de qualquer escrita.
  */
 
+import { autorizaCron } from "@/lib/auth/cron-auth";
 import { NextResponse, type NextRequest } from "next/server";
 import { apenasDeMembrosAtivos } from "@/lib/agenda/google/membros";
 
@@ -39,7 +40,6 @@ import { configuracaoDoGoogle } from "@/lib/agenda/google/config";
 import { classificarErroDoGoogle, estadoDaConexaoApos } from "@/lib/agenda/google/erros";
 import { fundirTokens, precisaRenovar, type TokenDoGoogle } from "@/lib/agenda/google/oauth";
 import { renovarToken } from "@/lib/agenda/google/token";
-import { env } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
 
@@ -203,15 +203,8 @@ async function marcarConexao(
     .eq("id", linha.id);
 }
 
-function autorizado(req: NextRequest): boolean {
-  const cabecalho = req.headers.get("authorization") ?? "";
-  const aceitos = [env.INTERNAL_CRON_SECRET, env.INTERNAL_SECRET].filter(Boolean);
-  // Fail-closed: sem segredo configurado, ninguém entra.
-  return aceitos.length > 0 && aceitos.some((s) => cabecalho === `Bearer ${s}`);
-}
-
 async function executar(req: NextRequest): Promise<Response> {
-  if (!autorizado(req)) {
+  if (!autorizaCron(req)) {
     return NextResponse.json({ error: { code: "unauthenticated", message: "cron secret inválido" } }, { status: 401 });
   }
   const resumo = await renovarAgendasDoGoogle(createAdminClient(), { agora: new Date() });

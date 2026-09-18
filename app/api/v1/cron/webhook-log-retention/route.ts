@@ -12,6 +12,7 @@
  * Auth: `Authorization: Bearer <INTERNAL_CRON_SECRET>` (fecha quando falta o
  * segredo). Mesma forma de `app/api/v1/cron/storage-redaction/route.ts`.
  */
+import { autorizaCron } from "@/lib/auth/cron-auth";
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
@@ -28,14 +29,7 @@ const LOTE_MAXIMO = 5_000;
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
-  const auth = req.headers.get("authorization") ?? "";
-  const provided = auth.startsWith("Bearer ") ? auth.slice("Bearer ".length).trim() : "";
-
-  const aceitos: string[] = [];
-  if (env.INTERNAL_CRON_SECRET) aceitos.push(env.INTERNAL_CRON_SECRET);
-  if (env.INTERNAL_SECRET) aceitos.push(env.INTERNAL_SECRET);
-
-  if (aceitos.length === 0 || !provided || !aceitos.includes(provided)) {
+  if (!autorizaCron(req)) {
     return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
   }
 

@@ -31,13 +31,13 @@
  * INTERNAL_SECRET, fail-closed). Audita SÓ quando devolveu algo — varredura
  * vazia não é mutação (`tests/unit/cron-audita-so-quando-ha-efeito.test.ts`).
  */
+import { autorizaCron } from "@/lib/auth/cron-auth";
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { ok, fail } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
-import { env } from "@/lib/env";
 import {
   lerPrazoDeDevolucaoMinutos,
   selecionarVencidas,
@@ -197,10 +197,7 @@ export async function devolverHandoffsVencidos(
 async function handle(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
-  const auth = req.headers.get("authorization") ?? "";
-  const provided = auth.startsWith("Bearer ") ? auth.slice("Bearer ".length).trim() : "";
-  const accepted = [env.INTERNAL_CRON_SECRET, env.INTERNAL_SECRET].filter(Boolean);
-  if (accepted.length === 0 || !provided || !accepted.includes(provided)) {
+  if (!autorizaCron(req)) {
     return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
   }
 

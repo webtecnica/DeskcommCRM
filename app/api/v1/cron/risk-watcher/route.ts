@@ -31,11 +31,11 @@
  * é mecânica: `tests/unit/cron-routes-scheduled.test.ts` compara o diretório de
  * rotas com o crontab e fica VERMELHO se alguma rota ficar órfã dos dois lados.
  */
+import { autorizaCron } from "@/lib/auth/cron-auth";
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
 
 import { ok, fail } from "@/lib/api/wrappers";
-import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
 import { venceReativacoes } from "@/lib/leads/reactivation";
 import { observaTravessias } from "@/lib/leads/risk-worker";
@@ -49,10 +49,7 @@ const ORG_LIMIT = 50;
 async function handle(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
 
-  const auth = req.headers.get("authorization") ?? "";
-  const provided = auth.startsWith("Bearer ") ? auth.slice("Bearer ".length).trim() : "";
-  const accepted = [env.INTERNAL_CRON_SECRET, env.INTERNAL_SECRET].filter(Boolean);
-  if (accepted.length === 0 || !provided || !accepted.includes(provided)) {
+  if (!autorizaCron(req)) {
     return fail("forbidden", "Cron secret missing or invalid.", 403, { requestId });
   }
 
