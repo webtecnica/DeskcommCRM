@@ -157,7 +157,10 @@ const horariosLivresShape = {
     .min(1)
     .max(MAXIMO_DE_DIAS)
     .optional()
-    .describe(`quantos dias olhar a partir de agora (padrão ${DIAS_PADRAO}). Use ESTE campo se você não sabe a data de hoje.`),
+    .describe(
+      `quantos dias olhar a partir de agora (padrão ${DIAS_PADRAO}). Use ESTE campo se você não sabe a data de hoje. ` +
+        "É EXCLUSIVO com `dia`: mande um ou outro — e, se vierem os dois, quem vale é o `dia`.",
+    ),
   /**
    * A data civil é deliberadamente diferente de um ISO com offset. O modelo sabe
    * que o cliente pediu "dia 13", mas não sabe onde começa esse dia no fuso da
@@ -168,7 +171,10 @@ const horariosLivresShape = {
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "dia deve estar em YYYY-MM-DD")
     .optional()
-    .describe("dia civil pedido pelo cliente, em YYYY-MM-DD. Use para uma data específica; o servidor aplica o fuso da agenda."),
+    .describe(
+      "dia civil pedido pelo cliente, em YYYY-MM-DD. Use para uma data específica; o servidor aplica o fuso da agenda. " +
+        "É EXCLUSIVO com `dias_a_frente`: mande um ou outro — e, se vierem os dois, quem vale é este campo.",
+    ),
   owner_user_id: z.string().uuid().optional(),
   limite: z
     .number()
@@ -288,6 +294,7 @@ export const crmFindFreeSlots: McpToolDefinition<typeof horariosLivresShape> = {
     "existem e `ha_mais` avisa que sobraram — lista cortada NÃO é agenda cheia. " +
     "QUANDO: informe `dias_a_frente` (a partir de agora — ex.: 7 para a próxima semana). " +
     "Para uma data que o cliente nomeou, use `dia` em YYYY-MM-DD; o servidor aplica o fuso da agenda. " +
+    "Os dois são exclusivos, mas mandar os dois NÃO é erro e NÃO exige repetir a chamada: `dia` vence. " +
     "NUNCA monte um intervalo UTC por conta própria. " +
     "Lista vazia NÃO é erro e NÃO significa que a agenda está cheia: leia `publicou_horarios`. " +
     "Se ele for false, o atendente ainda não publicou os horários dele — não invente horários e " +
@@ -300,14 +307,19 @@ export const crmFindFreeSlots: McpToolDefinition<typeof horariosLivresShape> = {
   requiresScope: "mcp:read",
   handler: async (input, ctx) => {
     const agora = new Date();
-    if (input.dia !== undefined && input.dias_a_frente !== undefined) {
-      return {
-        horarios: [],
-        motivo: "periodo_ambiguo",
-        mensagem: "informe um dia específico ou quantos dias olhar, não os dois.",
-      };
-    }
-
+    // `dia` e `dias_a_frente` NÃO são exclusivos na prática: o modelo manda os
+    // dois em quase toda chamada (medido na issue #1436). Recusar devolvia lista
+    // vazia em <1 ms sem tocar o banco: o turno estourava o teto de passos, o
+    // cliente ficava sem resposta, e a auditoria gravava `success: true` — o
+    // pior dos mundos, porque nem parecia erro.
+    //
+    // Tolerar em vez de recusar é a MESMA doutrina do uuid nil
+    // (`lib/mcp/uuid-de-aterro.ts`): em vez de exigir que o modelo acerte, a
+    // ferramenta aceita o que ele manda e escolhe o mais específico — o `dia`
+    // nomeado pelo cliente vence o relativo, e a consulta SEGUE. A `describe()`
+    // dos dois campos declara isso ao modelo, que é o texto que ele lê antes de
+    // chamar.
+    //
     // A faixa larga contém o dia civil em QUALQUER fuso. Depois de a coleta
     // revelar o fuso da regra, filtramos pelo mesmo dia local. Assim a IA não
     // converte "13/09" em meia-noite UTC e não perde a noite de Manaus.
