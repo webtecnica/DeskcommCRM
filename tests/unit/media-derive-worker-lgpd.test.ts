@@ -47,6 +47,9 @@ let redigida: boolean;
 /** Os filtros (coluna, valor) que o worker pôs no UPDATE final. */
 let filtrosDoUpdate: [string, string, string][];
 
+/** Os patches que o "banco" de fato aplicou (filtros casaram a linha atual). */
+let gravacoesEfetivas: Record<string, unknown>[];
+
 /** Emula o corpo sentinela que a anonimização grava na mensagem. */
 const BODY_ANONIMIZADO = "[mensagem anonimizada]";
 
@@ -98,6 +101,7 @@ vi.mock("@/lib/supabase/admin", () => ({
                   if (op === "isdistinct") return atual !== v;
                   return true;
                 });
+                if (casa) gravacoesEfetivas.push(patch);
                 const p = Promise.resolve({ data: casa ? [messageRow] : [], error: null });
                 return p.then(onFulfilled, onRejected);
               },
@@ -172,6 +176,7 @@ describe("deriveMessageMedia — LGPD: não grava transcrição em mensagem já 
   beforeEach(() => {
     redigida = false;
     filtrosDoUpdate = [];
+    gravacoesEfetivas = [];
     downloadMock.mockReset().mockResolvedValue({ data: new Blob([new Uint8Array([1, 2, 3])]), error: null });
     updateEqMock.mockReset();
     messageRow.media_derived_status = null;
@@ -213,6 +218,39 @@ describe("deriveMessageMedia — LGPD: não grava transcrição em mensagem já 
     expect(r.status).not.toBe("ok");
     expect(r.status).toBe("skipped");
     expect(r.detail).toBe("message_redacted");
+  });
+
+  it("lê → anonimiza → falha na última tentativa: o failed NÃO regrava o metadata que a cascata zerou", async () => {
+    // `markFailed` grava `metadata` a partir da foto lida no começo (#2189).
+    // Sem a guarda, uma anonimização no meio devolveria à linha redigida o
+    // metadata que a cascata LGPD apagou.
+    vi.mocked(deriveMediaText).mockImplementation(async () => {
+      redigida = true;
+      throw new Error("provedor fora do ar");
+    });
+
+    const r = await deriveMessageMedia(eventRow(4));
+
+    expect(r.status).toBe("error");
+    expect(updateEqMock).toHaveBeenCalledWith(expect.objectContaining({ media_derived_status: "failed" }));
+    expect(
+      gravacoesEfetivas.filter((g) => "metadata" in g),
+      "o failed regravou metadata numa mensagem anonimizada",
+    ).toEqual([]);
+  });
+
+  it("controle: falha na última tentativa em mensagem viva grava failed com motivo", async () => {
+    vi.mocked(deriveMediaText).mockRejectedValue(new Error("provedor fora do ar"));
+
+    const r = await deriveMessageMedia(eventRow(4));
+
+    expect(r.status).toBe("error");
+    expect(gravacoesEfetivas).toContainEqual(
+      expect.objectContaining({
+        media_derived_status: "failed",
+        metadata: expect.objectContaining({ media_derived_motivo: expect.stringMatching(/\S/) }),
+      }),
+    );
   });
 
   it("mensagem viva (não redigida) grava normal — controle do caminho feliz", async () => {
