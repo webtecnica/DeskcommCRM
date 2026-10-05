@@ -20,6 +20,29 @@ import { lastLine, sql } from "./gov-helpers";
 const ORG_SEM_OPTIN = "43700000-0000-4000-8000-000000000001";
 const ORG_COM_OPTIN = "43700000-0000-4000-8000-000000000002";
 const ORG_NOVA_DEFAULT = "43700000-0000-4000-8000-000000000003";
+/**
+ * Organizações PRÓPRIAS do terceiro caso. Um arquivo = um banco, então os três
+ * casos compartilham a mesma pilha: reusar as das irmãs chocava o
+ * `contacts_pkey` (a mesma linha de contato montada duas vezes) e, pior, a de
+ * opt-in chegava com a mídia JÁ expirada pela irmã de cima — a medição saía de
+ * um estado que este caso não montou. Org nova = fixture limpa = o isolamento
+ * mede isolamento, não resíduo.
+ */
+const ORG_SEM_OPTIN_ISO = "43700000-0000-4000-8000-000000000004";
+const ORG_COM_OPTIN_ISO = "43700000-0000-4000-8000-000000000005";
+
+/**
+ * Um UUID VÁLIDO derivado do da organização: o 2º grupo vira o rótulo, o
+ * último (o da própria org) fica de pé.
+ *
+ * O defecto era colar `-0000-4000-8000-…` num uuid INTEIRO, virando
+ * `43700000-0000-4000-8000-000000000001-0000-4000-8000-0000000000b1` — 45
+ * caracteres com dois hífens a mais — e o Postgres recusava todo INSERT com
+ * `invalid input syntax for type uuid`. Manter o grupo do fim também é o que
+ * impede id de duas organizações diferentes de colidir: sem isto, o isolamento
+ * que o terceiro caso mede cairia no conflito de PK antes de chegar nele.
+ */
+const idDe = (org: string, rotulo: string) => `${org.slice(0, 9)}${rotulo}${org.slice(13)}`;
 
 const naFila = (p: string) =>
   Number(lastLine(sql(`select count(*) from storage_redaction_queue where bucket = 'whatsapp-media' and object_path = '${p}'`)));
@@ -27,11 +50,11 @@ const naFila = (p: string) =>
 /** Fixture de UMA organização: uma mensagem velha (100 dias) e uma nova (5). */
 function monta(org: string, optin: string): void {
   const com = `${org}`;
-  const conta = `${org}-0000-4000-8000-0000000000b1`;
-  const conv = `${org}-0000-4000-8000-0000000000b2`;
-  const sess = `${org}-0000-4000-8000-0000000000b3`;
-  const velha = `${org}-0000-4000-8000-0000000000d1`;
-  const nova = `${org}-0000-4000-8000-0000000000d2`;
+  const conta = idDe(org, "00b1");
+  const conv = idDe(org, "00b2");
+  const sess = idDe(org, "00b3");
+  const velha = idDe(org, "00d1");
+  const nova = idDe(org, "00d2");
   const pv = `${com}/v.jpg`;
   const pn = `${com}/n.jpg`;
   sql(`
@@ -40,7 +63,7 @@ function monta(org: string, optin: string): void {
       values ('${com}', 'org-${com}', 'Org', 'Org', 10, ${optin})
       on conflict (id) do update set media_retention_days = '10', media_retention_enforced = ${optin};
     insert into contacts (id, organization_id, name, phone_number)
-      values ('${conta}', '${com}', 'Cliente', '+55 11 9999 0000');
+      values ('${conta}', '${com}', 'Cliente', '+5511999900000');
     insert into channel_sessions (id, organization_id, waha_session_name, status, webhook_secret_encrypted)
       values ('${sess}', '${com}', 's-${com}', 'WORKING', '\\\\x00'::bytea);
     insert into conversations (id, organization_id, contact_id, channel_session_id, status, is_group)
@@ -58,11 +81,11 @@ function monta(org: string, optin: string): void {
 }
 
 const msgStatus = (org: string, qual: "velha" | "nova") => {
-  const id = `${org}-0000-4000-8000-0000000000d${qual === "velha" ? 1 : 2}`;
+  const id = idDe(org, qual === "velha" ? "00d1" : "00d2");
   return lastLine(sql(`select metadata->>'media_status' from messages where id = '${id}'`));
 };
 const msgCampos = (org: string) => {
-  const id = `${org}-0000-4000-8000-0000000000d1`;
+  const id = idDe(org, "00d1");
   return lastLine(sql(`select (media_storage_path is null)::text || '|' || (media_url is null)::text from messages where id = '${id}'`));
 };
 
@@ -80,7 +103,7 @@ describe("fn_enfileirar_midia_vencida — opt-in, piso, isolamento e marcador (0
     expect(naFila(`${ORG_SEM_OPTIN}/v.jpg`)).toBe(0);
     // Coluna garante que organização nova nasce com a retenção aplicada.
     expect(lastLine(sql(`select media_retention_enforced::text from organizations where id = '${ORG_NOVA_DEFAULT}'`)))
-      .toBe("t");
+      .toBe("true");
   });
 
   it("com opt-in expira na 30 (piso) e marca a mensagem expired, anulando storage e url", () => {
@@ -92,16 +115,16 @@ describe("fn_enfileirar_midia_vencida — opt-in, piso, isolamento e marcador (0
     expect(naFila(`${ORG_COM_OPTIN}/n.jpg`)).toBe(0);
     // Marcador + os DOIS campos anulados (a rota não busca de novo do provedor).
     expect(msgStatus(ORG_COM_OPTIN, "velha")).toBe("expired");
-    expect(msgCampos(ORG_COM_OPTIN)).toBe("t|t");
+    expect(msgCampos(ORG_COM_OPTIN)).toBe("true|true");
     expect(msgStatus(ORG_COM_OPTIN, "nova")).toBe(""); // null / sem marcador
   });
 
   it("isolamento por organização: ligar uma não arrasta a outra", () => {
-    monta(ORG_SEM_OPTIN, "false");
-    monta(ORG_COM_OPTIN, "true");
+    monta(ORG_SEM_OPTIN_ISO, "false");
+    monta(ORG_COM_OPTIN_ISO, "true");
     const r = JSON.parse(lastLine(sql(`select public.fn_enfileirar_midia_vencida(500)::text`)));
     expect(r.vencidas).toBe(1);
-    expect(naFila(`${ORG_SEM_OPTIN}/v.jpg`)).toBe(0);
-    expect(naFila(`${ORG_COM_OPTIN}/v.jpg`)).toBe(1);
+    expect(naFila(`${ORG_SEM_OPTIN_ISO}/v.jpg`)).toBe(0);
+    expect(naFila(`${ORG_COM_OPTIN_ISO}/v.jpg`)).toBe(1);
   });
 });

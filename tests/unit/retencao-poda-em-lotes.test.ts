@@ -282,6 +282,11 @@ describe("podarHistorico — o laço de lotes", () => {
       async apagarRascunhos() {
         return { data: null, error: { message: "permission denied for table conversation_drafts" } };
       },
+      // A décima segunda poda é PARTE do contrato de `PodaDb`: sem ela o objeto
+      // nem é um `PodaDb` (o typecheck reprova) e o teste não media a poda inteira.
+      async enfileirarMidia() {
+        return { data: { vencidas: 0, orfas: 0 }, error: null };
+      },
     };
     await expect(podarHistorico(db, {})).rejects.toThrow(/permission denied/);
   });
@@ -361,6 +366,11 @@ describe("a décima poda — o rascunho sugerido vencido (issue #1686)", () => {
       },
       async apagarRascunhos() {
         return { data: null, error: { message: "permission denied for table conversation_drafts" } };
+      },
+      // Mesmo contrato da irmã aqui em cima: o mock tem de ser um `PodaDb`
+      // COMPLETO, senão o typecheck nem deixa o teste medir o que veio medir.
+      async enfileirarMidia() {
+        return { data: { vencidas: 0, orfas: 0 }, error: null };
       },
     };
     await expect(podarHistorico(db, {})).rejects.toThrow(/conversation_drafts/);

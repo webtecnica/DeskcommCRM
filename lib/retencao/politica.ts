@@ -276,6 +276,11 @@ export const RETENCAO_CANDIDATOS_GOLDEN_DIAS_PISO = 30;
  * Quem APLICA é `fn_enfileirar_midia_vencida` (0432 + 0526), chamada em lotes
  * pelo cron `media-retention` — e o piso mora DENTRO do corpo da função
  * (`greatest(...)`), valendo para qualquer chamador, inclusive um `psql` na mão.
+ * É a única poda cujo piso a função LÊ DE UMA COLUNA
+ * (`organizations.media_retention_days`) em vez de receber por parâmetro — o
+ * prazo é por organização —, então a cerca
+ * `tests/unit/retencao-todo-piso-tem-dono.test.ts` a lista em
+ * `DONO_NO_SQL_POR_ORG`, com a mesma régua das irmãs trocando só a fonte.
  *
  * ⚠️ MÍDIA É OPT-IN (migration 0526, issue #1534): a função só enfileira mídia
  * vencida de organização com `media_retention_enforced = true`. Esta dupla de

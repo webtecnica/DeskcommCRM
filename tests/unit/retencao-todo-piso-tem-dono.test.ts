@@ -72,6 +72,21 @@ const DONO_NO_SQL: Record<string, string> = {
 };
 
 /**
+ * Donos cujo piso NÃO vem de `p_retencao_dias` — a MÍDIA (0526, issue #1534) é
+ * a única poda cujo prazo é POR ORGANIZAÇÃO (`organizations.media_retention_days`,
+ * o opt-in da tela): a função não RECEBE o piso como argumento, ela LÊ a coluna
+ * dentro do corpo. Não é isenção nenhuma: o piso está no SQL, como nas irmãs —
+ * muda só de ONDE a sonda procura. A asserção continua medindo a mesma coisa
+ * (`greatest(coalesce(<fonte>, PADRAO), PISO)` dentro do corpo da função dona,
+ * com os números tirados de `politica.ts`), então um piso que sair do banco ou
+ * um número que mudar só no TypeScript fica vermelho do mesmo jeito.
+ */
+const DONO_NO_SQL_POR_ORG: Record<string, { fn: string; fonte: string }> = {
+  // migration 0526 — a retenção de mídia aplicada da tela (issue #1534).
+  MIDIA: { fn: "fn_enfileirar_midia_vencida", fonte: "o.media_retention_days" },
+};
+
+/**
  * Pares que legitimamente NÃO têm função no banco. A chave é o prefixo; o valor
  * é um trecho da razão que precisa estar escrita em `politica.ts`.
  */
@@ -118,13 +133,15 @@ describe("todo piso de retenção tem dono no SQL, ou isenção escrita", () => 
     // É este caso que faz a lista deixar de ser fixa. Um quinto par exportado
     // amanhã cai aqui até alguém decidir a qual dos dois lados ele pertence.
     const orfaos = paresDeclarados().filter(
-      (p) => !(p in DONO_NO_SQL) && !(p in SEM_FUNCAO_NO_SQL),
+      (p) => !(p in DONO_NO_SQL) && !(p in DONO_NO_SQL_POR_ORG) && !(p in SEM_FUNCAO_NO_SQL),
     );
     expect(
       orfaos,
       "Par de retenção exportado em politica.ts sem dono: acrescente a função " +
-        "que o aplica em DONO_NO_SQL, ou isente em SEM_FUNCAO_NO_SQL escrevendo " +
-        "a razão em politica.ts. Piso que só existe no TypeScript é decorativo.",
+        "que o aplica em DONO_NO_SQL (ou, quando o piso vem de uma coluna da " +
+        "organização e não de `p_retencao_dias`, em DONO_NO_SQL_POR_ORG), ou " +
+        "isente em SEM_FUNCAO_NO_SQL escrevendo a razão em politica.ts. " +
+        "Piso que só existe no TypeScript é decorativo.",
     ).toEqual([]);
   });
 
@@ -135,6 +152,16 @@ describe("todo piso de retenção tem dono no SQL, ou isenção escrita", () => 
     // mesmos números, e a busca ampla deixaria um cobrir o sumiço do outro.
     expect(corpoDaFuncao(fn)).toContain(esperado);
   });
+
+  it.each(Object.entries(DONO_NO_SQL_POR_ORG))(
+    "o piso de %s está no corpo da função dele, lido da coluna da organização",
+    (prefixo, dono) => {
+      // Mesma régua da lista de cima, com a FONTE trocada: os números vêm de
+      // `politica.ts`, então mudar o piso só no TypeScript deixa isto vermelho.
+      const esperado = `greatest(coalesce(${dono.fonte}, ${valor(prefixo, "PADRAO")}), ${valor(prefixo, "PISO")})`;
+      expect(corpoDaFuncao(dono.fn)).toContain(esperado);
+    },
+  );
 
   it.each(Object.entries(SEM_FUNCAO_NO_SQL))(
     "a isenção de %s tem a razão escrita em politica.ts",

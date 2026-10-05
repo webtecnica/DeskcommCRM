@@ -149,6 +149,9 @@ describe("as telas de Configurações oferecem o que o registro deixa aparecer",
             locale: "pt-BR",
             currency: "BRL",
             media_retention_days: 365,
+            // Opt-in da retenção de mídia (#1534): campo obrigatório do
+            // `TenantInput` que o `TenantForm` recebe.
+            media_retention_enforced: false,
             dpo_email: null,
             privacy_policy_url: null,
           }}

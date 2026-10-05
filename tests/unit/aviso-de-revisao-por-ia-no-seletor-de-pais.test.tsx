@@ -25,6 +25,9 @@ const BASE: TenantInput = {
   locale: "pt-BR",
   currency: "EUR",
   media_retention_days: 365,
+  // Opt-in da retenção de mídia (#1534): virou campo obrigatório do
+  // `tenantSchema`, e `TenantForm initial` é um `TenantInput`.
+  media_retention_enforced: false,
   dpo_email: null,
   privacy_policy_url: null,
 };
