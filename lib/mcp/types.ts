@@ -32,8 +32,11 @@ export interface McpContext {
    * ausência é o que mantém o comportamento deles intacto. O Operador NÃO está
    * entre eles: `operator-turn.ts` monta o turno com `contactId: job.contact_id`,
    * então ele também recebe o contato da conversa e também fica escopado. Uso hoje: o
-   * escopo de LEITURA de contato de `lib/mcp/tools/contacts.ts` (#2158) — a
-   * conversa é com alguém, e a ficha/busca de outro cliente não sai do turno.
+   * escopo de LEITURA de contato de `lib/mcp/tools/contacts.ts` (#2158) e das
+   * demais leituras do atendimento — `conversations.ts` (lista, conversa,
+   * histórico) e `comercio.ts` (pedidos) (#2178). A conversa é com alguém, e a
+   * ficha, a busca, a conversa, o histórico e os pedidos de outro cliente não
+   * saem do turno.
    */
   contatoDoTurno?: string;
   organizationId: string;

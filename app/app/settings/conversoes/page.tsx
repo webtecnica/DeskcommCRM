@@ -70,8 +70,10 @@ import {
 import { FormularioDeCapturaDeUtm } from "./_formCapturaDeUtm";
 import { FormularioDeConversoes } from "./_form";
 import { FormularioDeConversoesGoogle } from "./_formGoogle";
+import { IdentidadeDaConversao } from "./_identidadeDaMeta";
 import { VendaPeloCanal } from "./_vendaPeloCanal";
 import { vendaPeloCanalLigada } from "@/lib/conversoes/venda-pelo-canal";
+import { identidadeDaMeta } from "@/lib/plataformas-de-anuncio/meta/identidade";
 import { RegrasDeConversaoGoogle, type EtapaAberta } from "./_regrasGoogle";
 import { listarRegrasGoogle } from "@/lib/conversoes/regras-google";
 import { RegrasDeConversaoMeta } from "./_regrasMeta";
@@ -161,6 +163,9 @@ export default async function ConversoesPage({
   ];
   const linhaDaOrganizacao = organizacao.data as { slug: string | null; settings?: unknown } | null;
   const slug = linhaDaOrganizacao?.slug ?? null;
+  // Página / WABA gravadas pela tela (#2098) — a MESMA leitura que a credencial
+  // faz no caminho do envio, para a tela e o envio nunca divergirem.
+  const identidadeMeta = identidadeDaMeta(linhaDaOrganizacao?.settings);
   // Etapas abertas agrupadas por funil, na ordem do funil; a primeira de cada
   // funil é onde o lead nasce (a sugestão "Novo lead" do recomendado).
   const vistosOsFunis = new Set<string>();
@@ -331,6 +336,13 @@ export default async function ConversoesPage({
             ligada={vendaPeloCanalLigada(linhaDaOrganizacao?.settings)}
             idioma={idioma}
           />
+          {estado.conectada && (
+            <IdentidadeDaConversao
+              pageId={identidadeMeta.pageId}
+              whatsappBusinessAccountId={identidadeMeta.whatsappBusinessAccountId}
+              idioma={idioma}
+            />
+          )}
           {estado.conectada && !etapas.error && regrasMeta && (
             <RegrasDeConversaoMeta etapas={etapasAbertas} regras={regrasMeta} idioma={idioma} />
           )}

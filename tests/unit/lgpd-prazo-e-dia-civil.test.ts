@@ -734,16 +734,33 @@ describe("o alerta 'vencida' do painel vira junto com o selo", () => {
 /** Raízes onde `due_at` pode aparecer; o resto do produto não tem SLA de LGPD. */
 const AREAS = [
   "lib/lgpd",
+  // A ferramenta MCP de privacidade LISTA `due_at`. Esta linha era
+  // `app/api/mcp/tools` — uma pasta que não existe no repositório — e a raiz de
+  // verdade (`lib/mcp/tools`) ficava fora da varredura: um consumidor novo ali
+  // passava sem entrar em lista nenhuma. Ver o teste "toda raiz de AREAS
+  // existe" logo abaixo, que é o dente desta armadilha.
+  "lib/mcp/tools",
+  // Os hooks de tela RECEBEM a coluna e a repassam sem formatar. Já estavam
+  // nomeados em `REPASSA_O_VALOR`, mas a lista só é aplicada a quem a varredura
+  // encontra — e sem a raiz aqui, os dois ficavam de fora do teste que a alimenta.
+  "hooks",
   "app/api/v1/lgpd",
   "app/app/lgpd",
   "app/admin/(protected)/lgpd",
-  "app/api/mcp/tools",
   // O painel da plataforma lê o mesmo `due_at` por outra porta: a API de
   // administração, o cron do alarme e a tabela de `components/admin`. Fora
   // daqui, `computeRiskLevel` marcava "Vencido" na véspera sem lista nenhuma.
   "app/api/v1/admin",
   "app/api/v1/cron",
+  // Os webhooks da Nuvemshop GRAVAM `due_at` (o motor devolve o dia) e o
+  // repassam em `p_metadata`: são escritores, sem leitura de rótulo — mas estão
+  // na lista pelo mesmo motivo dos outros escritores, que um deles não passe a
+  // formatar com fuso amanhã.
+  "app/api/v1/webhooks",
   "components/admin",
+  // `scripts/` (as seeds do e2e) fica DE PROPÓSITO de fora: o #2100 mediu que
+  // o `due_at` delas é um instante real e não a meia-noite UTC do dia —
+  // comportamento aceito para semente que nenhuma instalação roda.
 ];
 
 function arquivosDaArea(raiz: string): string[] {
@@ -906,6 +923,23 @@ describe("nenhum consumidor de due_at nasce fora da lista", () => {
     for (const arquivo of [...LEEM_PELO_HELPER, ...REPASSA_O_VALOR]) {
       expect(readFileSync(join(RAIZ, arquivo), "utf8")).toContain("due_at");
     }
+  });
+
+  it("toda raiz de AREAS existe — a varredura não pode olhar para uma pasta que não existe", () => {
+    // Motivo: a lista apontava `app/api/mcp/tools`, que não existe, enquanto a
+    // pasta real das ferramentas MCP é `lib/mcp/tools`. Raiz morta não dá
+    // vermelho nenhum: `arquivosDaArea` engole o erro do `readdirSync`, devolve
+    // vazio, e uma varredura certa sobre a lista errada continua parecendo um
+    // gate verde. Este caso existe para que a próxima raiz que sumir do repo
+    // seja ruído aqui, e não um consumidor silenciosamente fora da rede.
+    const raizInexistente = AREAS.filter((area) => {
+      try {
+        return !statSync(join(RAIZ, area)).isDirectory();
+      } catch {
+        return true;
+      }
+    });
+    expect(raizInexistente).toEqual([]);
   });
 
   it("um arquivo está em UMA lista só — as três são partição, não camadas", () => {

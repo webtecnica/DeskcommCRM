@@ -488,6 +488,29 @@ describe("nascimento do lead", () => {
     );
   });
 
+  it("o negócio da conversa do Instagram nasce com origem Instagram, não WhatsApp", async () => {
+    // Sem isto, `garantirLeadDaConversa` cai no padrão: `source = 'whatsapp'`
+    // e "primeira mensagem recebida no WhatsApp" para quem escreveu no direct.
+    await rodar({ canal: "instagram" });
+    expect(garantirLeadDaConversa).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        origem: expect.objectContaining({
+          source: "instagram",
+          motivo: "primeira mensagem recebida no Instagram",
+        }),
+      }),
+    );
+  });
+
+  it("sem canal informado, a origem continua WhatsApp — o QR e o oficial não mudam", async () => {
+    await rodar();
+    expect(garantirLeadDaConversa).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ origem: expect.objectContaining({ source: "whatsapp" }) }),
+    );
+  });
+
   it("exceção no nascimento não impede o despacho", async () => {
     garantirLeadDaConversa.mockRejectedValue(new Error("funil não configurado") as never);
     await rodar();
