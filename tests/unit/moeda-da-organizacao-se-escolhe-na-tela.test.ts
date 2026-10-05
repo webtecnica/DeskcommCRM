@@ -71,11 +71,7 @@ function entrada(over: Record<string, unknown> = {}) {
     locale: "es",
     currency: "MXN",
     media_retention_days: 365,
-    // Opt-in da retenção de mídia (issue #1534): virou CAMPO do `tenantSchema`,
-    // então toda fixture que finge ser um formulário válido tem de dizer. Sem
-    // ele o `safeParse` falha em TODA moeda da lista e este arquivo reprova o
-    // seletor por um motivo que não é o dele.
-    media_retention_enforced: false,
+    media_retention_enforced: true,
     dpo_email: null,
     privacy_policy_url: null,
     ...over,

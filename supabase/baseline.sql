@@ -39374,33 +39374,31 @@ grant  execute on function public.fn_expurgar_candidatos_do_golden(int,int) to s
 -- ---- a retenção de mídia passa a existir (migration 0432) ----
 -- ---- a fila de remoção de mídia deixa de ser eterna (migration 0434) ----
 -- ---- a contagem do expurgo volta para o retorno (migration 0435) ----
--- ---- a retenção de mídia vira opt-in, marca a mensagem e obedece à LGPD (migration 0526) ----
+-- ---- a limpeza de mídia ganha interruptor, marca a mensagem e obedece à LGPD (migration 0557) ----
 --
--- A 0526 (#1534) adiciona `organizations.media_retention_enforced` (opt-in:
--- existente nasce FALSE, nova nasce TRUE por default) e faz a função NO LUGAR
--- abaixo respeitar o opt-in, SUSPENDER a expiração enquanto a organização tem
--- pedido LGPD em andamento (`lgpd_requests` em `received`/`processing`), anular
--- `media_url` (a rota não busca de novo do provedor), zerar
--- `media_derived_text` e marcar `media_status='expired'` + `media_expired_at` ao
--- expirar. O corpo abaixo é a 0526 EDITADA NO LUGAR — ele tem de casar com o
--- da última migration, senão quem instala pelo kit self-host fica com outra
--- função de quem aplica a cadeia (apendice-do-baseline-nao-diverges-da-cadeia).
+-- A 0557 (#1534, PR #2180) adiciona `organizations.media_retention_enforced`
+-- com default TRUE: a organização que já existe CONTINUA com a limpeza que
+-- roda desde a 0432, e o interruptor serve para quem quiser DESLIGAR (doc 92,
+-- opção A). SEM `update` de backfill, de propósito: o `update.sh` reaplica este
+-- arquivo inteiro a cada versão, e um `update` aqui desfaria a escolha de quem
+-- mexeu no interruptor. A função NO LUGAR abaixo passa a respeitar o
+-- interruptor, SUSPENDER a expiração enquanto a organização tem pedido LGPD em
+-- andamento (`lgpd_requests` em `received`/`processing`), anular `media_url`
+-- (a rota não busca de novo do provedor), zerar `media_derived_text` e marcar
+-- `media_status='expired'` + `media_expired_at` ao expirar.
 alter table public.organizations
   add column if not exists media_retention_enforced boolean not null default true;
 
-update public.organizations
-   set media_retention_enforced = false
- where media_retention_enforced is distinct from false;
 -- Ver o cabeçalho das TRÊS migrations: a 0432 enfileira arquivo vencido e
 -- órfão na mesma fila da LGPD (o cron storage-redaction remove pelo Storage
 -- API); a 0434 (#1739) reabre `deleted`/`skipped` quando o mesmo caminho
 -- volta a existir e expurga linha `deleted` com mais de 90 dias; a 0435
 -- (#1765) devolve a contagem desse expurgo, que antes não aparecia nem no
--- retorno nem na trilha; a 0526 (#1534) vira a retenção OPT-IN e marca a
--- mensagem `media_status='expired'` ao expirar. O corpo abaixo é a 0526
+-- retorno nem na trilha; a 0557 (#1534) obedece ao interruptor e marca a
+-- mensagem `media_status='expired'` ao expirar. O corpo abaixo é a 0557
 -- EDITADA NO LUGAR — ele tem de casar com o da última migration, senão quem
 -- instala pelo kit self-host fica com outra função de quem aplica a cadeia
--- (apendice-do-baseline-não-diverge-da-cadeia).
+-- (apendice-do-baseline-nao-diverge-da-cadeia).
 create or replace function public.fn_enfileirar_midia_vencida(p_limite integer default 500)
 returns jsonb
 language plpgsql
@@ -39441,8 +39439,8 @@ begin
   get diagnostics v_expurgadas = row_count;
 
   -- 1. VENCIDAS: arquivo de mensagem mais velho que a retenção da organização —
-  --    SÓ de organização que LIGOU e confirmou (`media_retention_enforced`,
-  --    0526/#1534) e que NÃO está com pedido LGPD em andamento: um pedido de
+  --    SÓ de organização com o interruptor LIGADO (`media_retention_enforced`,
+  --    0557/#1534) e que NÃO está com pedido LGPD em andamento: um pedido de
   --    acesso/eliminação em curso (`lgpd_requests` em `received`/`processing`)
   --    não pode ter o objeto destruído no meio do atendimento — a suspensão é
   --    da ORGANIZAÇÃO INTEIRA, o lado conservador de um prazo legal. O índice

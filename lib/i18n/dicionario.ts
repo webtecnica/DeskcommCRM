@@ -1503,10 +1503,13 @@ export const DICIONARIO: Traducoes = {
   "Razão social": { es: "Razón social" },
   "DPO email": { es: "Email del DPO" },
   "Retenção de mídia (dias)": { es: "Retención de archivos multimedia (días)" },
-  "A mídia de mensagem com mais de": { es: "La multimedia de mensajes con más de" },
-  "dias será apagada automaticamente.": { es: "días se eliminará automáticamente." },
-  "Aplicar a retenção de mídia": { es: "Aplicar la retención de multimedia" },
-  "Ligue para começar a apagar a mídia mais antiga. Desligado por padrão.": { es: "Actívalo para empezar a eliminar la multimedia más antigua. Desactivado por defecto." },
+  "Limpeza automática de mídia antiga": { es: "Limpieza automática de multimedia antigua" },
+  "Ligado: apaga a mídia com mais de {n} dias.": {
+    es: "Activado: elimina la multimedia con más de {n} días.",
+  },
+  "Desligado: a mídia das conversas não é apagada por idade.": {
+    es: "Desactivado: la multimedia de las conversaciones no se elimina por antigüedad.",
+  },
   "Ao ligar, a mídia de mensagem com mais de {n} dias começará a ser apagada.": { es: "Al activarlo, la multimedia de mensajes con más de {n} días comenzará a eliminarse." },
   "URL política de privacidade": { es: "URL de la política de privacidad" },
   "Informações pessoais. Email só pode ser trocado em breve.": {

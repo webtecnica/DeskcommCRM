@@ -273,19 +273,15 @@ export const RETENCAO_CANDIDATOS_GOLDEN_DIAS_PISO = 30;
  * provedor enquanto ele a tiver — o que a política segura é o custo e a
  * finalidade, não o histórico legal.
  *
- * Quem APLICA é `fn_enfileirar_midia_vencida` (0432 + 0526), chamada em lotes
+ * Quem APLICA é `fn_enfileirar_midia_vencida` (0432 + 0557), chamada em lotes
  * pelo cron `media-retention` — e o piso mora DENTRO do corpo da função
  * (`greatest(...)`), valendo para qualquer chamador, inclusive um `psql` na mão.
- * É a única poda cujo piso a função LÊ DE UMA COLUNA
- * (`organizations.media_retention_days`) em vez de receber por parâmetro — o
- * prazo é por organização —, então a cerca
- * `tests/unit/retencao-todo-piso-tem-dono.test.ts` a lista em
- * `DONO_NO_SQL_POR_ORG`, com a mesma régua das irmãs trocando só a fonte.
  *
- * ⚠️ MÍDIA É OPT-IN (migration 0526, issue #1534): a função só enfileira mídia
- * vencida de organização com `media_retention_enforced = true`. Esta dupla de
- * constantes descreve o PADRÃO e o PISO; quem decide se VALE para uma
- * organização é a coluna de opt-in, não estes números.
+ * ⚠️ MÍDIA TEM INTERRUPTOR (migration 0557, issue #1534): a função só enfileira
+ * mídia vencida de organização com `media_retention_enforced = true`, que é o
+ * PADRÃO — a limpeza roda desde a 0432 e quem já existia continua com ela
+ * (doc 92, opção A). Esta dupla de constantes descreve o PADRÃO e o PISO; quem
+ * decide se VALE para uma organização é o interruptor, não estes números.
  */
 export const RETENCAO_MIDIA_DIAS_PADRAO = 365;
 /**

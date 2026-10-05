@@ -63,14 +63,16 @@ export async function persistMessageMedia(row: EventRow): Promise<HandlerResult>
   if (error) return { consumer_key, status: "error", detail: error.message };
 
   const msg = data as MessageMediaRow | null;
-  if (!msg?.media_url) return { consumer_key, status: "skipped", detail: "no media_url" };
-  if (msg.media_storage_path) return { consumer_key, status: "skipped", detail: "already stored" };
-  // A retenção marcou `metadata.media_status='expired'` (migration 0526): a mídia
+  // A retenção marcou `metadata.media_status='expired'` (migration 0557): a mídia
   // foi retirada por política, nem `media_url` nem `media_storage_path` devem
-  // voltar. NÃO tentar baixar de novo do provedor o que expirou (#1534).
-  if ((msg.metadata as Record<string, unknown> | null)?.media_status === "expired") {
+  // voltar. NÃO tentar baixar de novo do provedor o que expirou (#1534). Vem
+  // ANTES do `!media_url`: a poda anula a `media_url`, e depois dele esta guarda
+  // nunca seria alcançada — o detalhe diria "no media_url" em vez do motivo real.
+  if (msg?.metadata?.media_status === "expired") {
     return { consumer_key, status: "skipped", detail: "expired by retention" };
   }
+  if (!msg?.media_url) return { consumer_key, status: "skipped", detail: "no media_url" };
+  if (msg.media_storage_path) return { consumer_key, status: "skipped", detail: "already stored" };
 
   // `derivacao` é o item 2 da #2171: todo desfecho TERMINAL da derivação
   // grava `media_derived_status` junto do motivo, para a coluna nunca ficar

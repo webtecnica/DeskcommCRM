@@ -68,7 +68,7 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     return fail("not_found", t("Mensagem sem mídia."), 404, { requestId });
   }
   if (!msg.media_storage_path && !msg.media_url) {
-    // A mídia foi podada pela retenção (o marcador `expired` da migration 0526 é
+    // A mídia foi podada pela retenção (o marcador `expired` da migration 0557 é
     // a prova escrita). 404 seria "não há o que servir" e deixaria a tela cair
     // no aviso genérico; 410 diz a verdade — o recurso EXISTIU e foi retirado
     // por política. O aceite do #1534 manda a rota NÃO buscar de novo do
@@ -79,9 +79,11 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
     const dias = typeof meta.media_retention_days === "number" ? meta.media_retention_days : null;
     return fail(
       expirada ? "media_expired" : "not_found",
-      expirada && dias !== null
-        ? t("Mídia apagada pela política de retenção ({n} dias)").replace("{n}", String(dias))
-        : t("Mídia apagada pela política de retenção."),
+      !expirada
+        ? t("Mensagem sem mídia.")
+        : dias !== null
+          ? t("Mídia apagada pela política de retenção ({n} dias)").replace("{n}", String(dias))
+          : t("Mídia apagada pela política de retenção."),
       expirada ? 410 : 404,
       { requestId },
     );

@@ -189,18 +189,19 @@ export function TenantForm({ initial }: Props) {
               value={form.media_retention_days}
               onChange={(e) => set("media_retention_days", Number(e.target.value))}
             />
-            <p className="text-xs text-muted-foreground">
-              {t("A mídia de mensagem com mais de")} {form.media_retention_days}{" "}
-              {t("dias será apagada automaticamente.")}
-            </p>
           </div>
           <div className="flex items-center justify-between rounded-lg border p-3">
             <div>
               <Label htmlFor="media_retention_enforced">
-                {t("Aplicar a retenção de mídia")}
+                {t("Limpeza automática de mídia antiga")}
               </Label>
               <p className="text-xs text-muted-foreground">
-                {t("Ligue para começar a apagar a mídia mais antiga. Desligado por padrão.")}
+                {form.media_retention_enforced
+                  ? t("Ligado: apaga a mídia com mais de {n} dias.").replace(
+                      "{n}",
+                      String(form.media_retention_days),
+                    )
+                  : t("Desligado: a mídia das conversas não é apagada por idade.")}
               </p>
             </div>
             <Switch

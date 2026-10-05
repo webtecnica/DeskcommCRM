@@ -147,7 +147,7 @@ export interface ResultadoDaRetencao {
   lotes_candidatos_do_golden: number;
   candidatos_do_golden_tem_resto: boolean;
   /**
-   * A MÍDIA de mensagem vencida enfileirada para remoção (migration 0526,
+   * A MÍDIA de mensagem vencida enfileirada para remoção (migration 0557,
    * issue #1534) — `vencidas + orfas` do `fn_enfileirar_midia_vencida`, a mesma
    * leitura do cron `media-retention`. Os dois crons chamam a MESMA função: a
    * delas (05:20) drena `whatsapp-media` por conta própria, esta (04:40) é o
@@ -196,7 +196,7 @@ export interface PodaDb {
     args: { p_retencao_dias: number; p_limite: number },
   ): Promise<{ data: number | null; error: { message: string } | null }>;
   /**
-   * A DÉCIMA segunda poda (migration 0526, issue #1534): a retenção de mídia.
+   * A DÉCIMA segunda poda (migration 0557, issue #1534): a retenção de mídia.
    *
    * Método PRÓPRIO, e não mais uma entrada na união do `rpc` — mesma exceção do
    * rascunho e pela razão inversa: `fn_enfileirar_midia_vencida` recebe UM
@@ -290,7 +290,7 @@ async function drenarRascunhos(
 }
 
 /**
- * O retorno JSONB do `fn_enfileirar_midia_vencida` (0432/0526).
+ * O retorno JSONB do `fn_enfileirar_midia_vencida` (0432/0557).
  *
  * Três chaves, e a leitura delas é o relatório da rodada: `vencidas` (mensagem
  * vencida), `orfas` (arquivo sem ponteiro) e `expurgadas` (linha `deleted` da
@@ -304,7 +304,7 @@ export interface RetornoDaFilaDeMidia {
 }
 
 /**
- * A décima segunda poda (migration 0526, issue #1534): a retenção de mídia.
+ * A décima segunda poda (migration 0557, issue #1534): a retenção de mídia.
  *
  * Mesmo laço de `drenar` — par no lote incompleto, teto por invocação,
  * `temResto` quando o teto fecha — e a MESMA regra de erro: sobe. As duas
@@ -464,7 +464,7 @@ export async function podarHistorico(
   // Padrão 90 / piso 30, a janela em que o near-miss ainda é curável — o piso mora no
   // CORPO da função, como nas irmãs. A linha é rótulo, sem texto de cliente.
   const candidatosDrenados = await drenar(db, "fn_expurgar_candidatos_do_golden", candidatosDoGolden.dias);
-  // Décima segunda poda (migration 0526, issue #1534): a retenção de MÍDIA que a
+  // Décima segunda poda (migration 0557, issue #1534): a retenção de MÍDIA que a
   // tela prometia e que nada aplicava. O prazo não é knob de ambiente — é
   // `organizations.media_retention_days`, com o piso de 30 dias no `greatest(...)`
   // do corpo da função —, então o que este laço decide é só QUANTO drenar por
@@ -631,7 +631,7 @@ async function handle(req: NextRequest): Promise<Response> {
           .limit(lote);
         return { data: Array.isArray(data) ? data.length : null, error };
       },
-      // A décima segunda poda (migration 0526, #1534): a retenção de mídia. O
+      // A décima segunda poda (migration 0557, #1534): a retenção de mídia. O
       // retorno é JSONB (`{vencidas, orfas, expurgadas}`), por isso um método
       // próprio em vez de mais uma entrada na união do `rpc` — ver a JSDoc de
       // `PodaDb.enfileirarMidia`.

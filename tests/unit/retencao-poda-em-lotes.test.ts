@@ -282,8 +282,6 @@ describe("podarHistorico — o laço de lotes", () => {
       async apagarRascunhos() {
         return { data: null, error: { message: "permission denied for table conversation_drafts" } };
       },
-      // A décima segunda poda é PARTE do contrato de `PodaDb`: sem ela o objeto
-      // nem é um `PodaDb` (o typecheck reprova) e o teste não media a poda inteira.
       async enfileirarMidia() {
         return { data: { vencidas: 0, orfas: 0 }, error: null };
       },
@@ -367,13 +365,26 @@ describe("a décima poda — o rascunho sugerido vencido (issue #1686)", () => {
       async apagarRascunhos() {
         return { data: null, error: { message: "permission denied for table conversation_drafts" } };
       },
-      // Mesmo contrato da irmã aqui em cima: o mock tem de ser um `PodaDb`
-      // COMPLETO, senão o typecheck nem deixa o teste medir o que veio medir.
       async enfileirarMidia() {
         return { data: { vencidas: 0, orfas: 0 }, error: null };
       },
     };
     await expect(podarHistorico(db, {})).rejects.toThrow(/conversation_drafts/);
+  });
+
+  it("erro do banco sobe — a poda de mídia (#1534) também não engole falha", async () => {
+    const db: PodaDb = {
+      async rpc() {
+        return { data: 0, error: null };
+      },
+      async apagarRascunhos() {
+        return { data: 0, error: null };
+      },
+      async enfileirarMidia() {
+        return { data: null, error: { message: "permission denied for function fn_enfileirar_midia_vencida" } };
+      },
+    };
+    await expect(podarHistorico(db, {})).rejects.toThrow(/fn_enfileirar_midia_vencida/);
   });
 });
 
@@ -428,7 +439,7 @@ describe("houveEfeito — as duas direções", () => {
     lotes_candidatos_do_golden: 0,
     candidatos_do_golden_tem_resto: false,
     retencao_candidatos_do_golden_dias: RETENCAO_CANDIDATOS_GOLDEN_DIAS_PADRAO,
-    // Décima segunda poda (migration 0526, issue #1534): a retenção de mídia.
+    // Décima segunda poda (migration 0557, issue #1534): a retenção de mídia.
     midia_enfileirada: 0,
     midia_expurgada: 0,
     lotes_midia: 0,

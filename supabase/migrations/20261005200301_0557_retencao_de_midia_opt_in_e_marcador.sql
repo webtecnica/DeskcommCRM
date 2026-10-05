@@ -1,31 +1,30 @@
--- manifest: **A retenção de mídia declarada na tela passa a ser aplicada (issue #1534).** Opt-in (`organizations.media_retention_enforced`: existente nasce FALSE, nova nasce TRUE pelo DEFAULT), função `fn_enfileirar_midia_vencida` que só expira organização LIGADA, anula `media_storage_path` E `media_url`, zera `media_derived_text`, grava `metadata.media_status='expired'` + `media_expired_at`, respeita o piso de 30 dias e SUSPENDE a expiração enquanto a organização tem pedido LGPD em andamento (`lgpd_requests` status `received`/`processing`). Dreno em lotes no cron `data-retention`; rota `messages/[id]/media` devolve 410 e não re-busca do provedor.
+-- manifest: **A limpeza automática de mídia antiga ganha um interruptor e passa a marcar a mensagem (issue #1534, PR #2180).** Coluna `organizations.media_retention_enforced` (default TRUE: a organização que já existe CONTINUA com a limpeza que roda desde a 0432/1.53.0, e a nova nasce igual; sem backfill, então a atualização não desliga nem religa ninguém). `fn_enfileirar_midia_vencida` só expira organização com o interruptor ligado, anula `media_storage_path` E `media_url`, zera `media_derived_text`, grava `metadata.media_status='expired'` + `media_expired_at` + `media_retention_days`, mantém o piso de 30 dias e SUSPENDE a expiração enquanto a organização tem pedido LGPD em andamento (`lgpd_requests` status `received`/`processing`). Dreno em lotes também no cron `data-retention`; rota `messages/[id]/media` devolve 410 e não re-busca do provedor.
 --
--- ──── a retenção de mídia vira opt-in e marca a mensagem como expirada (migration 0526) ────
+-- ──── a limpeza de mídia ganha interruptor e marca a mensagem como expirada (migration 0557) ────
 --
--- O campo `organizations.media_retention_days` (padrão 365, Zod 30–3650) existia
--- desde a 0432 e a tela o oferecia — mas a regra B-03 prometia um cron que não
--- existia e nada aplicava o que a configuração pedia. A 0432 (#1731) passou a
--- PODAR, e entregou o outro lado do problema: enfileirava a mídia de QUALQUER
--- organização pela `media_retention_days` dela, sem que ninguém tivesse dito
--- "sim".
+-- Desde a 0432 (#1731, versão 1.53.0) a função abaixo apaga a mídia de mensagem
+-- de TODA organização pela `media_retention_days` dela. Esta migration NÃO muda
+-- isso para quem já existe — decisão do mantenedor (doc 92, opção A): a limpeza
+-- continua ligada, e o interruptor serve para quem quiser DESLIGAR.
 --
 -- Esta migration fecha o aceite do issue #1534 por quatro pontas:
---   (A) `organizations.media_retention_enforced` — a organização EXISTENTE só
---       começa a expirar depois de LIGAR e confirmar na tela (pergunta 1 do
---       autor, opção (a)). Backfill: existente = FALSE; o DEFAULT da coluna fica
---       TRUE para a organização NOVA nascer com a retenção aplicada.
---   (B) A função passou a respeitar o opt-in, a anular TAMBÉM `media_url` (a rota
---       de mídia não re-busca do provedor o que expirou), a zerar
---       `media_derived_text` (pergunta 2 do autor, opção (a): apagar junto) e a
---       marcar `metadata.media_status='expired'` + `media_expired_at` — o
---       marcador da tela (aviso próprio) e da rota (410).
+--   (A) `organizations.media_retention_enforced`, default TRUE. O `add column`
+--       com default preenche TRUE em toda linha existente, e NÃO há `update`
+--       de backfill: um `update` aqui seria reaplicado pelo `update.sh` a cada
+--       versão (o baseline inteiro roda de novo) e desfaria a escolha de quem
+--       mexeu no interruptor.
+--   (B) A função passou a respeitar o interruptor, a anular TAMBÉM `media_url` (a
+--       rota de mídia não re-busca do provedor o que expirou), a zerar
+--       `media_derived_text` (a transcrição sai junto com o áudio) e a marcar
+--       `metadata.media_status='expired'` + `media_expired_at` — o marcador da
+--       tela (aviso próprio) e da rota (410).
 --   (C) Piso de 30 dias no `greatest(..., 30)`: vale MESMO com valor menor
 --       gravado direto no banco, porque o piso mora dentro do corpo da função.
---   (D) Suspensão por pedido LGPD em andamento (pergunta 3): enquanto a
---       organização tem `lgpd_requests` em `received`/`processing`, a função não
---       enfileira a mídia dela — um pedido de acesso/eliminação em curso não
---       pode ter o objeto destruído no meio do atendimento. Sem schema novo: a
---       tabela e o índice `lgpd_requests_org_status_idx` já existem (0064).
+--   (D) Suspensão por pedido LGPD em andamento: enquanto a organização tem
+--       `lgpd_requests` em `received`/`processing`, a função não enfileira a
+--       mídia dela — um pedido de acesso/eliminação em curso não pode ter o
+--       objeto destruído no meio do atendimento. Sem schema novo: a tabela e o
+--       índice `lgpd_requests_org_status_idx` já existem (0064).
 --
 -- Lotes: `p_limite` (default 500) limita o `alvo`, então quem chama em laço drena
 -- progressivamente — é o que o cron `data-retention` (lotes de 1000, teto de 20
@@ -37,24 +36,15 @@
 alter table public.organizations
   add column if not exists media_retention_enforced boolean not null default true;
 
--- Backfill do opt-in: TODA organização existente no momento desta migration
--- começa com a retenção DESLIGADA (FALSE). As criadas depois nascem com TRUE
--- pelo default da coluna. O `where ... is distinct from` é a metade idempotente:
--- numa reaplicação, uma organização que o operador LIGOU na tela não volta a
--- ser calada.
-update public.organizations
-   set media_retention_enforced = false
- where media_retention_enforced is distinct from false;
-
--- ──── a função que aplica a retenção, agora respeitando o opt-in ────────────
+-- ──── a função que aplica a retenção, agora respeitando o interruptor ───────
 --
--- O corpo é a 0435 EDITADA: as mudanças são (1) o gate `media_retention_enforced`
+-- O corpo é o da 0483 EDITADO: as mudanças são (1) o gate `media_retention_enforced`
 -- e a SUSPENÇÃO por pedido LGPD aberto no passo VENCIDAS, e (2) o `limpas`
 -- anulando também `media_url`, zerando `media_derived_text` e gravando o
 -- marcador `media_status='expired'` + `media_expired_at`. O resto — piso no
 -- `greatest`, lote no `limit`, isolamento por `m.organization_id` na junção,
 -- templates e avatares fora do `alvo`, a reabertura no `on conflict`, o expurgo
--- da fila, os órfãos em filas — é exatamente o corpo da 0435.
+-- da fila, os órfãos das duas filas — é exatamente o corpo da 0483.
 create or replace function public.fn_enfileirar_midia_vencida(p_limite integer default 500)
 returns jsonb
 language plpgsql
@@ -77,7 +67,7 @@ begin
   get diagnostics v_expurgadas = row_count;
 
   -- 1. VENCIDAS: arquivo de mensagem mais velho que a retenção — SÓ de
-  --    organização que LIGOU e confirmou (media_retention_enforced = true) e que
+  --    organização com o interruptor LIGADO (media_retention_enforced, o padrão) e que
   --    NÃO está com pedido LGPD em andamento. Piso de 30 dias no `greatest`,
   --    mesmo com valor menor gravado no banco. A mensagem fica (texto, status,
   --    horário); o arquivo sai, a `media_url` também (a rota não busca de novo do

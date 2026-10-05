@@ -3,10 +3,10 @@
  *
  * Três camadas, cada uma com a régua que lhe cabe:
  *
- *   1. O TEXTO do schema (migration 0526 × apêndice do baseline) — as regras
+ *   1. O TEXTO do schema (migration 0557 × apêndice do baseline) — as regras
  *      que só existem no banco e que este repositório valida NA ESCRITA, porque
  *      o gate de escrita é o próprio artefato que o kit self-host aplica:
- *      opt-in (`media_retention_enforced`), piso de 30 dias, marcador
+ *      interruptor (`media_retention_enforced`, ligado por padrão), piso de 30 dias, marcador
  *      `expired` + `media_expired_at`, `media_derived_text` zerado, suspensão
  *      por pedido LGPD em andamento, lote no `limit` e isolamento por
  *      organização (templates e avatares fora do alvo).
@@ -41,7 +41,7 @@ const MIGRACAO = join(
   RAIZ,
   "supabase",
   "migrations",
-  "20261003120000_0526_retencao_de_midia_opt_in_e_marcador.sql",
+  "20261005200301_0557_retencao_de_midia_opt_in_e_marcador.sql",
 );
 const BASELINE = join(RAIZ, "supabase", "baseline.sql");
 
@@ -63,10 +63,10 @@ const cadeiaMensagem = {
   maybeSingle: async () => ({ data: mensagem, error: null }),
 };
 
-/** O apêndice do baseline, da marca da 0526 até a função SEGUINTE a ela. */
+/** O apêndice do baseline, da marca da 0557 até a função SEGUINTE a ela. */
 const apendice = (() => {
   const inicio = baseline.indexOf(
-    "-- ---- a retenção de mídia vira opt-in, marca a mensagem e obedece à LGPD (migration 0526) ----",
+    "-- ---- a limpeza de mídia ganha interruptor, marca a mensagem e obedece à LGPD (migration 0557) ----",
   );
   expect(inicio).toBeGreaterThan(0);
   const corpo = baseline.indexOf("create or replace function public.fn_enfileirar_midia_vencida", inicio);
@@ -85,7 +85,12 @@ function corpoDeVencidas(sql: string): string {
 }
 
 describe("a retenção de mídia existe no schema, das DUAS formas que o self-host aplica", () => {
-  it("migration e baseline prometem o opt-in: existente FALSE, nova TRUE", () => {
+  it("a limpeza continua LIGADA para quem já existe: default TRUE e nenhum UPDATE no interruptor", () => {
+    // Decisão do mantenedor (doc 92, opção A). O `add column ... default true`
+    // preenche TRUE em toda linha existente. Um UPDATE no interruptor dentro do
+    // apêndice seria reaplicado pelo `update.sh` a cada versão e desfaria a
+    // escolha de quem mexeu nele na tela — a prova executável disso é o
+    // invariante `retencao-de-midia-opt-in-e-marcador.test.ts`.
     for (const [rotulo, sql] of [
       ["migration", migracao],
       ["baseline", apendice],
@@ -93,8 +98,7 @@ describe("a retenção de mídia existe no schema, das DUAS formas que o self-ho
       expect(sql, rotulo).toContain(
         "add column if not exists media_retention_enforced boolean not null default true",
       );
-      expect(sql, rotulo).toContain("set media_retention_enforced = false");
-      expect(sql, rotulo).toContain("where media_retention_enforced is distinct from false");
+      expect(sql, rotulo).not.toMatch(/set\s+media_retention_enforced\s*=/);
     }
   });
 
@@ -298,6 +302,9 @@ describe("a rota messages/[id]/media não re-busca do provedor o que expirou", (
     const resposta = await chamada();
     expect(resposta.status).toBe(404);
     expect(adapter.fetchInboundMedia).not.toHaveBeenCalled();
+    // Mensagem que nunca teve mídia não fala em retenção.
+    const corpo = (await resposta.json()) as { error?: { message?: string } };
+    expect(corpo.error?.message).toBe("Mensagem sem mídia.");
   });
 
   it("mídia ainda não persistida segue indo buscar no provedor (controle)", async () => {

@@ -101,11 +101,11 @@ export function MessageBubble({
   const time = format(new Date(message.sent_at), "HH:mm", { locale: localeDaData });
   const isFailed = message.status === "failed";
   const hasMedia = Boolean(message.media_url || message.media_storage_path);
-  // A retenção marcou `metadata.media_status = 'expired'` (migration 0526) e a
+  // A retenção marcou `metadata.media_status = 'expired'` (migration 0557) e a
   // poda anulou os DOIS campos — a partir daí `hasMedia` é false e esta mensagem
   // de mídia perde o render. O aviso é o do issue #1534.
   const mediaExpirada = (message.metadata as Record<string, unknown> | null)?.media_status === "expired";
-  // O texto do aviso carrega os DIAS que a organização configurou — a 0526
+  // O texto do aviso carrega os DIAS que a organização configurou — a 0557
   // guarda `media_retention_days` (já com o piso de 30) junto do marcador,
   // porque a bolha não tem acesso à configuração da organização e "por política"
   // sem o número é uma promessa sem medida. Sem o campo (mensagem marcada por
