@@ -7,7 +7,8 @@ import { ApiError } from "@/lib/api/types";
 import { copyToClipboard } from "@/lib/clipboard";
 import { useSystemVersion } from "@/hooks/system/useSystemVersion";
 import { markdownParaTextoSimples } from "@/lib/system/changelog";
-import { ehVersaoPublicada, textoDaRodadaDoBanco } from "@/lib/system/update-run";
+import { ehVersaoPublicada, textoDaRodadaDoBanco, RUN_STALE_AFTER_MS } from "@/lib/system/update-run";
+import { retratoDoHostVelho } from "@/lib/system/retrato";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useT } from "@/hooks/i18n/useT";
@@ -215,6 +216,43 @@ export function UpdatePanel() {
    */
   const semSmtp = data?.smtp_configured === false;
 
+  // O ESTADO PRECISA ENVELHECER — não confiar no run sem prazo (#1101).
+  //
+  // O run bem-sucedido é notícia de que o `update.sh` foi até o fim, não de que
+  // o app está RODANDO na imagem nova. A janela `sucessoJaInstalado` (backend)
+  // já corta isso em RUN_STALE_AFTER_MS; aqui a tela também não confia num run
+  // cujo `finished_at` já passou desse prazo, nem num retrato do host parado.
+  // Sem isso, um run antigo com heartbeat morto continuava afirmando "a
+  // atualização terminou" / "é a mais recente" por tempo indeterminado.
+  const agoraMs = Date.now();
+  const runEnvelheceu = (() => {
+    const run = data?.run;
+    if (!run) return false;
+    const finished = run.finished_at ? Date.parse(run.finished_at) : NaN;
+    if (!Number.isNaN(finished) && agoraMs - finished > RUN_STALE_AFTER_MS) {
+      return true;
+    }
+    const dispatched = run.dispatched_at ? Date.parse(run.dispatched_at) : NaN;
+    if (
+      run.status === "dispatched" &&
+      !Number.isNaN(dispatched) &&
+      agoraMs - dispatched > RUN_STALE_AFTER_MS
+    ) {
+      return true;
+    }
+    return false;
+  })();
+  const agentStaleEfetivo =
+    typeof data?.agent_stale === "boolean"
+      ? data.agent_stale
+      : data?.agent_last_seen_at != null
+        ? retratoDoHostVelho(data.agent_last_seen_at, new Date(agoraMs))
+        : false;
+  // `just_updated` só vale se o run ainda está dentro da janela de validade e o
+  // host não está com o retrato parado. Run antigo/heartbeat morto: não confia.
+  const justUpdatedEfetivo =
+    data?.just_updated === true && !runEnvelheceu && !agentStaleEfetivo;
+
   if (isError && rodando) return <Reiniciando semSmtp={semSmtp} />;
   if (!data) {
     return (
@@ -328,7 +366,7 @@ export function UpdatePanel() {
   // precisa abrir é linha a mais para ignorar, e quem ignora uma ignora a próxima.
   const detalheNoLog = data.run?.rodada_do_banco?.disputa === true;
 
-  if (data.just_updated) {
+  if (justUpdatedEfetivo) {
     const pedida = semV(data.run?.to_version);
     return (
       <Layout
@@ -677,7 +715,7 @@ export function UpdatePanel() {
   // APONTA uma versão nova, a informação antiga ainda basta para agir — esconder
   // o botão ali tiraria a saída justamente de quem está atrasado. O que ele não
   // sustenta é a afirmação de que não há nada a fazer.
-  if (data.agent_stale && !data.update_available) {
+  if (agentStaleEfetivo && !data.update_available) {
     return (
       <Layout semSmtp={semSmtp} titulo={t("Não sei se há versão nova")}>
         <p className="text-sm">
