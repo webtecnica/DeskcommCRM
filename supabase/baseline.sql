@@ -62146,6 +62146,85 @@ revoke execute on function public.fn_numero_da_transferencia(uuid, uuid, uuid)
 grant execute on function public.fn_numero_da_transferencia(uuid, uuid, uuid)
   to service_role;
 
+-- ---- a conversa que continua (migration 9051, #3732) ----
+-- manifest: na transferência em que o número NÃO pode seguir o vendedor (o contato já tem conversa no número do dono novo), a conversa que está no número do dono novo — sem dono, ou com o dono anterior — passa para ele, sem tomar conversa que alguém assumiu no meio; a conversa presa fica registrada com o dono do número de origem (#3732, continuação do #3642).
+-- Qual conversa do MESMO contato está no número que o dono novo tomaria — o que
+-- impede a conversa de seguir o vendedor. Nula = não há colisão (a conversa vai
+-- para o número novo, ou não há número novo).
+--
+-- É o espelho de `fn_numero_da_transferencia`: as mesmas réguas de número
+-- conectado, mesmo canal, número atual de pessoas e grupo; a diferença é que ali
+-- a resposta é o número livre, e aqui é a conversa que já ocupa esse número.
+--
+-- `limit 1` no primeiro número do dono novo é de propósito: com dois números
+-- próprios, a transferência usa o PRIMEIRO (ordem estável da 9039). Se o
+-- primeiro está livre não há colisão nenhuma — o segundo número do dono não
+-- transforma uma transferência que deu certo em adoção.
+create or replace function public.fn_conversa_que_continua(
+  p_organization_id uuid,
+  p_conversation_id uuid,
+  p_user_id uuid
+)
+returns uuid
+language sql
+stable
+set search_path = ''
+as $$
+  with conversa as (
+    select c.id, c.organization_id, c.contact_id, c.channel_session_id, atual.provider
+      from public.conversations c
+      join public.channel_sessions atual
+        on atual.organization_id = c.organization_id and atual.id = c.channel_session_id
+     where c.id = p_conversation_id
+       and c.organization_id = p_organization_id
+       and c.is_group = false
+       and p_user_id is not null
+  ),
+  responsaveis_do_atual as (
+    select r.user_id
+      from conversa
+      join public.channel_routing_policies p
+        on p.organization_id = conversa.organization_id
+       and p.channel_session_id = conversa.channel_session_id
+      join public.channel_routing_responsibles r
+        on r.organization_id = p.organization_id and r.policy_id = p.id
+  ),
+  numero_do_destino as (
+    select cs.id
+      from conversa
+      join public.channel_routing_responsibles r
+        on r.organization_id = conversa.organization_id and r.user_id = p_user_id
+      join public.channel_routing_policies p
+        on p.organization_id = r.organization_id and p.id = r.policy_id
+      join public.channel_sessions cs
+        on cs.organization_id = p.organization_id and cs.id = p.channel_session_id
+     where exists (select 1 from responsaveis_do_atual)
+       and not exists (select 1 from responsaveis_do_atual a where a.user_id = p_user_id)
+       and cs.provider = conversa.provider
+       and cs.archived_at is null
+       and cs.status = 'WORKING'
+       and coalesce(cs.metadata ->> 'disabled', 'false') <> 'true'
+     order by cs.created_at, cs.id
+     limit 1
+  )
+  select o.id
+    from conversa
+    join numero_do_destino n on true
+    join public.conversations o
+      on o.organization_id = conversa.organization_id
+     and o.contact_id = conversa.contact_id
+     and o.is_group = false
+     and o.id <> conversa.id
+     and o.channel_session_id = n.id
+   order by o.updated_at desc, o.id
+   limit 1;
+$$;
+
+revoke execute on function public.fn_conversa_que_continua(uuid, uuid, uuid)
+  from public, anon, authenticated;
+grant execute on function public.fn_conversa_que_continua(uuid, uuid, uuid)
+  to service_role;
+
 -- ---- claim livre exige motivo e CAS (migration 9017) ----
 -- manifest: Restringe a exceção de atribuição da 0776 ao claim para si com CAS (#3479). Transferência, roteamento e escrita sem lock otimista continuam exigindo visibilidade; preserva filtros de organização, elegibilidade e grants. Substitui na árvore final a proposta 0776, inédita na main e com timestamp colidido; seus bytes e autoria permanecem no ancestor original. A 9017 redefine a função completa, sem depender da proposta.
 -- 9017 — a conversa livre invisível só é assumida pelo claim com CAS.
@@ -62163,6 +62242,8 @@ declare
   v_conv public.conversations%rowtype;
   v_numero uuid;
   v_trocou_de_numero boolean := false;
+  v_continua uuid;
+  v_continua_dono uuid;
 begin
   if not public.fn_support_write_allowed(p_organization_id) then raise exception 'support_readonly' using errcode='42501'; end if;
   if auth.uid() is not null
@@ -62233,6 +62314,28 @@ begin
   v_numero := public.fn_numero_da_transferencia(p_organization_id, p_conversation_id, p_to_user_id);
   v_trocou_de_numero := v_numero is not null;
 
+  -- ─── #3732: e quando o número NÃO pôde seguir ──────────────────────────────
+  -- O caso que a 9039 deixou em pé: o contato já tem conversa no número do dono
+  -- novo, então o número fica e o dono muda — e a conversa VIVA do contato, que
+  -- está no número do dono novo, continua com quem transferiu. O vendedor novo
+  -- não tem onde responder (o envio dele na conversa presa dá 409
+  -- `conversa_em_numero_de_outro_atendente`, "transfira para você" — já feito).
+  --
+  -- A conversa que ocupa o número do dono novo passa para ele quando está SEM
+  -- dono ou com o dono ANTERIOR. Conversa que já é de uma TERCEIRA pessoa não é
+  -- tomada: quem a assumiu no meio continua com ela. O dono lido vai como
+  -- `p_expected_assignee` da adoção — se alguém assumir no meio, não toma nada.
+  if not v_trocou_de_numero and p_to_user_id is not null and p_reason = 'transfer' then
+    select o.id, o.assigned_to_user_id
+      into v_continua, v_continua_dono
+      from public.conversations o
+     where o.id = public.fn_conversa_que_continua(
+             p_organization_id, p_conversation_id, p_to_user_id)
+       and o.assigned_to_user_id is distinct from p_to_user_id
+       and (o.assigned_to_user_id is null
+            or o.assigned_to_user_id is not distinct from v_from);
+  end if;
+
   update public.conversations
      set assigned_to_user_id = p_to_user_id,
          -- Desnormalizado JUNTO com o dono, na mesma transação: nunca existe
@@ -62271,6 +62374,14 @@ begin
     (organization_id, conversation_id, from_user_id, to_user_id, changed_by, reason)
   values
     (p_organization_id, p_conversation_id, v_from, p_to_user_id, auth.uid(), p_reason);
+
+  -- Depois do evento da conversa transferida, para a linha do tempo contar na
+  -- ordem em que aconteceu.
+  if v_continua is not null then
+    perform public.fn_conversation_assign(
+      p_organization_id, v_continua, p_to_user_id, p_reason,
+      v_continua_dono, true);
+  end if;
 
   return next v_conv;
 end;
