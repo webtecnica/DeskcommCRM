@@ -62,7 +62,16 @@ vi.mock("@/hooks/channels/useTemplates", () => ({
             slots: [],
             previews: [] as unknown[],
             savedValues: {},
-            components: [{ type: "BODY", text: "Olá {{1}}, seu pedido saiu." }],
+            // Com a amostra: uma definição com `{{1}}` SEM exemplo nunca foi
+            // aprovada pela plataforma, e desde a #3635 o formulário recusa
+            // salvar assim — o espelho só tem o que ela aprovou.
+            components: [
+              {
+                type: "BODY",
+                text: "Olá {{1}}, seu pedido saiu.",
+                example: { body_text: [["Ana"]] },
+              },
+            ],
             daConexao: true,
           },
           {

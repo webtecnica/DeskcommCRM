@@ -172,6 +172,10 @@ export function FormularioDaDefinicao({
   const erroDoCorpo = erroDoCampo("corpo", problemaDe("corpo"));
   const contadorDoRodape = contador("rodape", rodape.length, LIMITE_RODAPE);
   const erroDoRodape = erroDoCampo("rodape", problemaDe("rodape"));
+  // Calculado aqui, e não dentro do `disabled`: o gate `controle-decorativo`
+  // corta a tag do botão no primeiro `>` e um `>` na expressão faria ele ler um
+  // botão COM handler como mudo.
+  const bloqueadoPorProblema = problemas.length > 0;
 
   return (
     <div
@@ -507,7 +511,7 @@ export function FormularioDaDefinicao({
           <Button
             type="button"
             size="sm"
-            disabled={!nome.trim() || !corpo.trim() || salvando || problemas.length > 0}
+            disabled={!nome.trim() || !corpo.trim() || salvando || bloqueadoPorProblema}
             onClick={() => {
               const components = montarComponents({
                 body: corpo,
