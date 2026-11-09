@@ -315,7 +315,8 @@ function estadoDas(tabelas: readonly string[]): EstadoDaTabela[] {
                      or has_table_privilege('anon', c.oid, 'delete'))::text
         || E'\t' || exists(select 1 from pg_policy p
                             where p.polrelid = c.oid
-                              and p.polname = 'tenant_isolation_' || c.relname || '_all')::text
+                              and p.polname in ('tenant_isolation_' || c.relname || '_all',
+                           'tenant_isolation_' || c.relname || '_read'))::text
         || E'\t' || (select count(*) from pg_policy p
                       where p.polrelid = c.oid and p.polname like 'support\\_write\\_%')::text
       from pg_class c join pg_namespace n on n.oid = c.relnamespace

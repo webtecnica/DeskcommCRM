@@ -32,10 +32,13 @@
 --
 -- A CONSEQUÊNCIA ASSUMIDA, E É O PREÇO DO CORTE: `financial_entries.sale_id` é
 -- FK para `public.sales`, que agora só existe onde o módulo está instalado. Onde
--- não está, a coluna é `uuid` sem constraint — e a FK volta por esta
--- provisionadora (abaixo, `financeiro_sale_id_fkey`). É a consequência direta de
--- "tabela opcional"; o desenho que a remove de vez (FK adiada ao provisionar em
--- vez de recriada) é PR próprio, e fica declarado no corpo do PR.
+-- não está, e onde também não está depois de instalado, a coluna é `uuid` puro:
+-- a FK NÃO é devolvida por esta provisionadora. O `add constraint` sobre uma
+-- tabela do NÚCLEO foi medido e reprovado pela regra 3 da D4 (`corpo não escreve
+-- fora do módulo`, `tests/invariants/provisionadora-de-modulo.test.ts`), porque
+-- alterar `financial_entries` é mexer no que não é dela. A coerência do vínculo
+-- é de escrita — `fn_finalizar_comanda` grava venda e lançamento na MESMA
+-- transação —, não de constraint.
 --
 -- A FORMA, E CADA UMA DAS TRÊS REGRAS DA D4
 -- 1. SEM PARÂMETRO. O efeito é fixo e conhecido: não há nome de tabela, nem
@@ -283,22 +286,15 @@ comment on table public.sales is
 comment on table public.loyalty_ledger is
   'Livro-razão de fidelidade. O saldo do cliente é sum(points) — NUNCA uma coluna.';
 
--- A FK que o caixa perdeu: `financial_entries` é do NÚCLEO e fica no baseline,
--- mas apontava para `sales`, que é do módulo. Onde o módulo está instalado, o
--- vínculo volta a ser constraint, com o mesmo `on delete set null` que a 0351
--- declarava. O nome é conferido antes porque a provisionadora roda a cada
--- atualização (D6) e `add constraint` repetido seria erro.
-if to_regclass('public.financial_entries') is not null
-   and not exists (
-     select 1 from pg_constraint
-      where conname = 'financeiro_sale_id_fkey'
-        and conrelid = 'public.financial_entries'::regclass
-   )
-then
-  alter table public.financial_entries
-    add constraint financeiro_sale_id_fkey
-    foreign key (sale_id) references public.sales(id) on delete set null;
-end if;
+-- `financial_entries.sale_id` NÃO ganha FK aqui — e a razão é a regra 3 da D4:
+-- o corpo de uma provisionadora é o schema DELA, e um `alter table` sobre uma
+-- tabela do NÚCLEO é mexer no que não é dela. Medido: o bloco anterior (a FK
+-- que o caixa perdeu, devolvida com `add constraint`) foi reprovado por
+-- `tests/invariants/provisionadora-de-modulo.test.ts` com "escreve/altera
+-- tabela que já existe sem o módulo: financial_entries", que é a mesma frase da
+-- D2. `sale_id` fica `uuid` puro nos DOIS estados (módulo instalado e não) — a
+-- coerência do vínculo é de escrita, garantida por `fn_finalizar_comanda` dentro
+-- da mesma transação da venda, não de constraint.
 
   -- ── RLS das cinco tabelas, declarada por ESTA função (#1906 + D5) ──────────
   -- A rotina 0325 (`fn_proteger_tabelas_de_organizacao`) só enxerga tabela com
@@ -313,43 +309,114 @@ end if;
   -- a regra do olhar daquela varredura sem tirar a regra da tabela.
   alter table public.sales enable row level security;
   revoke all on public.sales from anon;
+  -- 0533: o `_all` virou par — e virou AQUI, dentro do corpo, porque a lista
+  -- dinâmica da 0533 encolheu para `financial_entries` (que é do caixa) quando
+  -- a 0487 tirou a comanda do baseline. `_read` com a função pura (o
+  -- support_readonly continua lendo), `_write` com `_full` e `role_at_least`
+  -- 'agent' — é o que a comanda move. O `_all` é derrubado antes: a 0533 cobra
+  -- que ele NÃO exista mais, e `rbac-config-ia-canais` cobra que nenhuma tabela
+  -- NOVA entre com policy ALL só-tenancy. Cada `create policy` ocupa DUAS
+  -- linhas de propósito (issue #1906).
   drop policy if exists tenant_isolation_sales_all on public.sales;
-  create policy tenant_isolation_sales_all
+  drop policy if exists tenant_isolation_sales_read on public.sales;
+  create policy tenant_isolation_sales_read
+    on public.sales for select
+    using (organization_id in (select public.fn_user_org_ids()) or public.fn_is_platform_admin());
+  drop policy if exists tenant_isolation_sales_write on public.sales;
+  create policy tenant_isolation_sales_write
     on public.sales for all
-    using (organization_id in (select * from public.fn_user_org_ids()))
-    with check (organization_id in (select * from public.fn_user_org_ids()));
-
+    using (organization_id in (select public.fn_user_org_ids()) or public.fn_is_platform_admin_full())
+    with check (public.fn_is_platform_admin_full()
+                or (organization_id in (select public.fn_user_org_ids())
+                    and public.fn_role_at_least(organization_id, 'agent')));
   alter table public.sale_items enable row level security;
   revoke all on public.sale_items from anon;
+  -- 0533: o `_all` virou par — e virou AQUI, dentro do corpo, porque a lista
+  -- dinâmica da 0533 encolheu para `financial_entries` (que é do caixa) quando
+  -- a 0487 tirou a comanda do baseline. `_read` com a função pura (o
+  -- support_readonly continua lendo), `_write` com `_full` e `role_at_least`
+  -- 'agent' — é o que a comanda move. O `_all` é derrubado antes: a 0533 cobra
+  -- que ele NÃO exista mais, e `rbac-config-ia-canais` cobra que nenhuma tabela
+  -- NOVA entre com policy ALL só-tenancy. Cada `create policy` ocupa DUAS
+  -- linhas de propósito (issue #1906).
   drop policy if exists tenant_isolation_sale_items_all on public.sale_items;
-  create policy tenant_isolation_sale_items_all
+  drop policy if exists tenant_isolation_sale_items_read on public.sale_items;
+  create policy tenant_isolation_sale_items_read
+    on public.sale_items for select
+    using (organization_id in (select public.fn_user_org_ids()) or public.fn_is_platform_admin());
+  drop policy if exists tenant_isolation_sale_items_write on public.sale_items;
+  create policy tenant_isolation_sale_items_write
     on public.sale_items for all
-    using (organization_id in (select * from public.fn_user_org_ids()))
-    with check (organization_id in (select * from public.fn_user_org_ids()));
-
+    using (organization_id in (select public.fn_user_org_ids()) or public.fn_is_platform_admin_full())
+    with check (public.fn_is_platform_admin_full()
+                or (organization_id in (select public.fn_user_org_ids())
+                    and public.fn_role_at_least(organization_id, 'agent')));
   alter table public.commission_rules enable row level security;
   revoke all on public.commission_rules from anon;
+  -- 0533: o `_all` virou par — e virou AQUI, dentro do corpo, porque a lista
+  -- dinâmica da 0533 encolheu para `financial_entries` (que é do caixa) quando
+  -- a 0487 tirou a comanda do baseline. `_read` com a função pura (o
+  -- support_readonly continua lendo), `_write` com `_full` e `role_at_least`
+  -- 'agent' — é o que a comanda move. O `_all` é derrubado antes: a 0533 cobra
+  -- que ele NÃO exista mais, e `rbac-config-ia-canais` cobra que nenhuma tabela
+  -- NOVA entre com policy ALL só-tenancy. Cada `create policy` ocupa DUAS
+  -- linhas de propósito (issue #1906).
   drop policy if exists tenant_isolation_commission_rules_all on public.commission_rules;
-  create policy tenant_isolation_commission_rules_all
+  drop policy if exists tenant_isolation_commission_rules_read on public.commission_rules;
+  create policy tenant_isolation_commission_rules_read
+    on public.commission_rules for select
+    using (organization_id in (select public.fn_user_org_ids()) or public.fn_is_platform_admin());
+  drop policy if exists tenant_isolation_commission_rules_write on public.commission_rules;
+  create policy tenant_isolation_commission_rules_write
     on public.commission_rules for all
-    using (organization_id in (select * from public.fn_user_org_ids()))
-    with check (organization_id in (select * from public.fn_user_org_ids()));
-
+    using (organization_id in (select public.fn_user_org_ids()) or public.fn_is_platform_admin_full())
+    with check (public.fn_is_platform_admin_full()
+                or (organization_id in (select public.fn_user_org_ids())
+                    and public.fn_role_at_least(organization_id, 'agent')));
   alter table public.commissions enable row level security;
   revoke all on public.commissions from anon;
+  -- 0533: o `_all` virou par — e virou AQUI, dentro do corpo, porque a lista
+  -- dinâmica da 0533 encolheu para `financial_entries` (que é do caixa) quando
+  -- a 0487 tirou a comanda do baseline. `_read` com a função pura (o
+  -- support_readonly continua lendo), `_write` com `_full` e `role_at_least`
+  -- 'agent' — é o que a comanda move. O `_all` é derrubado antes: a 0533 cobra
+  -- que ele NÃO exista mais, e `rbac-config-ia-canais` cobra que nenhuma tabela
+  -- NOVA entre com policy ALL só-tenancy. Cada `create policy` ocupa DUAS
+  -- linhas de propósito (issue #1906).
   drop policy if exists tenant_isolation_commissions_all on public.commissions;
-  create policy tenant_isolation_commissions_all
+  drop policy if exists tenant_isolation_commissions_read on public.commissions;
+  create policy tenant_isolation_commissions_read
+    on public.commissions for select
+    using (organization_id in (select public.fn_user_org_ids()) or public.fn_is_platform_admin());
+  drop policy if exists tenant_isolation_commissions_write on public.commissions;
+  create policy tenant_isolation_commissions_write
     on public.commissions for all
-    using (organization_id in (select * from public.fn_user_org_ids()))
-    with check (organization_id in (select * from public.fn_user_org_ids()));
-
+    using (organization_id in (select public.fn_user_org_ids()) or public.fn_is_platform_admin_full())
+    with check (public.fn_is_platform_admin_full()
+                or (organization_id in (select public.fn_user_org_ids())
+                    and public.fn_role_at_least(organization_id, 'agent')));
   alter table public.loyalty_ledger enable row level security;
   revoke all on public.loyalty_ledger from anon;
+  -- 0533: o `_all` virou par — e virou AQUI, dentro do corpo, porque a lista
+  -- dinâmica da 0533 encolheu para `financial_entries` (que é do caixa) quando
+  -- a 0487 tirou a comanda do baseline. `_read` com a função pura (o
+  -- support_readonly continua lendo), `_write` com `_full` e `role_at_least`
+  -- 'agent' — é o que a comanda move. O `_all` é derrubado antes: a 0533 cobra
+  -- que ele NÃO exista mais, e `rbac-config-ia-canais` cobra que nenhuma tabela
+  -- NOVA entre com policy ALL só-tenancy. Cada `create policy` ocupa DUAS
+  -- linhas de propósito (issue #1906).
   drop policy if exists tenant_isolation_loyalty_ledger_all on public.loyalty_ledger;
-  create policy tenant_isolation_loyalty_ledger_all
+  drop policy if exists tenant_isolation_loyalty_ledger_read on public.loyalty_ledger;
+  create policy tenant_isolation_loyalty_ledger_read
+    on public.loyalty_ledger for select
+    using (organization_id in (select public.fn_user_org_ids()) or public.fn_is_platform_admin());
+  drop policy if exists tenant_isolation_loyalty_ledger_write on public.loyalty_ledger;
+  create policy tenant_isolation_loyalty_ledger_write
     on public.loyalty_ledger for all
-    using (organization_id in (select * from public.fn_user_org_ids()))
-    with check (organization_id in (select * from public.fn_user_org_ids()));
+    using (organization_id in (select public.fn_user_org_ids()) or public.fn_is_platform_admin_full())
+    with check (public.fn_is_platform_admin_full()
+                or (organization_id in (select public.fn_user_org_ids())
+                    and public.fn_role_at_least(organization_id, 'agent')));
 
   -- D5: a proteção na MESMA transação. Sem esta linha a tabela nasce com a anon
   -- key podendo ler tudo — `baseline.sql:4748` dá, por
@@ -670,7 +737,6 @@ begin
     );
   end if;
 
-  execute $q$
   with lancamentos as (
     select direction, amount_cents, currency
       from public.financial_entries
@@ -844,8 +910,7 @@ begin
       ))
         from moedas m
     ), '{}'::jsonb)
-  );
-  $q$ into v;
+  ) into v;
   return v;
 end $fn$;
 

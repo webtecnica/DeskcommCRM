@@ -19,8 +19,11 @@ na mesma transação — a tabela nasce protegida. Quem não instala o módulo n
 carrega mais as tabelas dele.
 
 O preço do corte, declarado: `financial_entries` é do caixa e fica no baseline,
-mas `sale_id` apontava para `sales` — a coluna passa a ser `uuid` sem FK onde o
-módulo não está, e a constraint volta pela própria provisionadora onde ele está.
+mas `sale_id` apontava para `sales` — a coluna passa a ser `uuid` puro nos DOIS
+estados. A constraint NÃO volta pela provisionadora: um `alter table` sobre uma
+tabela do núcleo é o que a regra 3 da D4 proíbe (`corpo não escreve fora do
+módulo`), e o invariante mediu e reprovou o bloco. A coerência do vínculo é de
+escrita — `fn_finalizar_comanda` grava venda e lançamento na mesma transação.
 E as funções de negócio (`fn_proximo_numero_de_comanda`, `fn_finalizar_comanda`,
 `fn_estornar_comanda`, `fn_relatorio_financeiro`, `fn_saldo_de_fidelidade`) foram
 reescritas para compilar sem as tabelas (D7): `language sql` e `%rowtype` são

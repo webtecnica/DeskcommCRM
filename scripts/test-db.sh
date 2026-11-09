@@ -90,6 +90,31 @@ TEMPLATE="inv_baseline"
 
 [ -f "$BASELINE" ] || { echo "FATAL: $BASELINE não encontrado" >&2; exit 1; }
 
+# ── o molde entrega o produto COM a comanda de pé ──────────────────────────────
+#
+# Desde a 0487 (ADR-0002 D2/D9) as cinco tabelas do módulo financeiro — `sales`,
+# `sale_items`, `commission_rules`, `commissions`, `loyalty_ledger` — não estão
+# mais no `baseline.sql`: nascem em `fn_financeiro_provisionar()`, porque quem
+# não instala o módulo não carrega as tabelas dele (~368 KB vazias).
+#
+# Medido em 2026-10-05 (branch do #1907, 34 arquivos e 43 testes vermelhos): sem
+# as tabelas no molde, quase TODA esta suíte fica vermelha por ausência de
+# schema, não por defeito de produto — a cascata de LGPD tem `update sales set`
+# escrito no núcleo (D8), o seed do `rls-isolation` semeia comanda e o catálogo
+# de FKs do `redact-unificado` deriva de `sales → contacts`. É o mesmo estado do
+# `origin/main`, onde a suíte é verde: as cinco tabelas existiam por ali.
+#
+# Por isso o molde provisiona o módulo DEPOIS do baseline, chamando a
+# provisionadora DIRETO — nunca `fn_modulo_instalar`, que registraria a linha em
+# `modulos_instalados` e derrubaria `modulo-instalado.test.ts` (que cobra
+# `count(*) = 0`) e `adr-0002-d8-secoes-de-modulo-na-cascata.test.ts` (que cobra
+# `modulo_secoes_lgpd` vazia). O molde continua sendo "o baseline aplicado" para
+# tudo que o baseline declara; o que muda é que ele entrega o módulo instalado,
+# que é o estado em que este produto roda.
+#
+# `tests/db/banco-limpo-por-arquivo.ts` derruba as cinco tabelas no ÚNICO arquivo
+# que precisa delas ausentes (ver o comentário de provisionamento, mais abaixo).
+
 # O DETECTOR DE ÁRVORE VIVA — o script desconfiando de si mesmo.
 #
 # Esta suíte lê o `baseline.sql` no começo e roda por até ~15 minutos. Se alguém
@@ -443,6 +468,16 @@ echo "    ✓ tabela nova nasce com DELETE direto para anon, authenticated e ser
 echo "==> modo INSTALL: aplicando baseline.sql com ON_ERROR_STOP=1"
 aplicar_baseline
 echo "    ✓ install ok"
+
+# ── provisionar o módulo financeiro no molde (a 0487 tirou as cinco tabelas do baseline) ──
+# O porquê está no bloco do topo (junto de TEMPLATE="inv_baseline"). Chamada
+# DIRETA na provisionadora, nunca `fn_modulo_instalar`: `modulos_instalados`
+# fica vazia e `modulo_secoes_lgpd` também, que é o que os invariantes
+# `modulo-instalado` e `adr-0002-d8-secoes-de-modulo-na-cascata` cobram.
+echo "==> molde provisiona o módulo financeiro (fn_financeiro_provisionar)"
+docker exec -i "$CONTAINER" psql -U postgres -d "$TEMPLATE" -q -v ON_ERROR_STOP=1 -f - <<'SQL'
+select public.fn_financeiro_provisionar();
+SQL
 
 # O MOLDE DE APLICAÇÃO ÚNICA: cópia do banco NESTE instante, antes do UPDATE.
 #

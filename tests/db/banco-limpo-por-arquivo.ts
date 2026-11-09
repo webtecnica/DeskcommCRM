@@ -45,6 +45,8 @@
  */
 import { execFileSync } from "node:child_process";
 
+import { expect } from "vitest";
+
 const container = process.env.TEST_DB_CONTAINER;
 const template = process.env.TEST_DB_TEMPLATE;
 
@@ -63,6 +65,46 @@ execFileSync(
     encoding: "utf8",
   },
 );
+
+// ── a ÚNICA exceção ao molde provisionado ──────────────────────────────────────
+//
+// `scripts/test-db.sh` provisiona o módulo financeiro NO MOLDE depois do
+// baseline: desde a 0487 as cinco tabelas da comanda (`sales`, `sale_items`,
+// `commission_rules`, `commissions`, `loyalty_ledger`) nascem da
+// `fn_financeiro_provisionar()` e não estão mais no `baseline.sql` — e sem
+// elas quase toda esta suíte fica vermelha por ausência de schema, não por
+// defeito (a cascata de LGPD tem `update sales set` no núcleo, o seed do
+// `rls-isolation` semeia comanda, o catálogo de FKs do `redact-unificado`
+// deriva de `sales → contacts`). Medido: 34 arquivos e 43 testes vermelhos.
+//
+// `tests/invariants/financeiro-provisionadora.test.ts` é o ÚNICO arquivo cuja
+// pré-condição é o banco SEM o módulo — é ele que mede o provisionar de
+// verdade a partir de uma instalação nova, e a própria mensagem do molde diz
+// "Alguém as pôs no baseline?". Ele derruba as cinco no SEU clone (cada
+// arquivo recebe um, então isto não vaza para nenhum outro) antes do molde
+// tirar a impressão digital do núcleo. `expect.getState().testPath` é lido no
+// topo do setupFile, que o Vitest evalua uma vez por arquivo de teste.
+const SEM_O_MODULO =
+  /(?:^|[/\\])(?:financeiro-provisionadora|provisionadora-de-modulo)\.test\.ts$/;
+const arquivo = String((expect as unknown as { getState: () => { testPath?: string } }).getState().testPath ?? "");
+if (SEM_O_MODULO.test(arquivo)) {
+  execFileSync(
+    "docker",
+    ["exec", "-i", container, "psql", "-U", "postgres", "-d", "postgres", "-qtA", "-v", "ON_ERROR_STOP=1", "-f", "-"],
+    {
+      // Ordem irrelevante: o `cascade` derruba as FKs entre elas.
+      //
+      // O segundo arquivo é `provisionadora-de-modulo.test.ts` (a varredura de
+      // forma da D4). Ela roda "num banco sem módulo instalado" e, com as cinco
+      // tabelas já no molde, reprovaria a própria 0487 com "escreve/altera
+      // tabela que já existe sem o módulo".
+      input:
+        "drop table if exists public.commissions, public.sale_items, public.loyalty_ledger,\n" +
+        "                 public.commission_rules, public.sales cascade;\n",
+      encoding: "utf8",
+    },
+  );
+}
 
 // Marcador lido por tests/invariants/harness-isola-por-arquivo.test.ts. Sem ele
 // aquele invariante não teria como distinguir "recebi um banco limpo porque o
