@@ -6029,5 +6029,8 @@
   "Cada aviso liga e desliga sozinho no Push. Desligar todos encerra os avisos deste aparelho fora do app.": "每种提醒都可以在推送中单独开关。全部关闭会结束此设备在应用外的提醒。",
   "Negócio entrou numa etapa que avisa": "商机进入了会提醒的阶段",
   "Dentro do app, este aviso aparece na Central de avisos.": "在应用内，此提醒显示在提醒中心。",
-  "A IA passou uma conversa para a equipe": "AI 已将对话转交给团队"
+  "A IA passou uma conversa para a equipe": "AI 已将对话转交给团队",
+  "O aviso da Meta chegou sem as respostas do formulário, e a busca das respostas está desligada nesta fonte. Cole o token da página e ligue a busca para os próximos entrarem.": "Meta 的通知没有附带表单答案，且此来源的答案查询已关闭。请粘贴主页令牌并开启查询，以便后续线索进入。",
+  "A busca das respostas na Meta não deu certo: o token pode ter vencido, estar sem permissão de leads, ou a Meta não respondeu. Confira o token da página nesta fonte.": "在 Meta 查询答案失败：令牌可能已过期、没有线索权限，或 Meta 没有响应。请检查此来源的主页令牌。",
+  "A Meta avisou um lead da página desta fonte, mas a fonte está pausada. Reative-a para os próximos entrarem.": "Meta 通知了来自此来源主页的线索，但该来源已暂停。请重新启用，以便后续线索进入。"
 }
