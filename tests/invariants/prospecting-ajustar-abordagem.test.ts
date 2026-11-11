@@ -82,6 +82,7 @@ const CONFIG = {
 const BUSCA = { name: "Clínicas em Campinas", segment: "clínica", location: "Campinas" };
 
 let canalA = "";
+let canalB = "";
 let contador = 0;
 const telefone = () => `+55119888${String(++contador).padStart(5, "0")}`;
 const cand = (n: number) => `0c120000-3333-4000-8000-${String(n).padStart(12, "0")}`;
@@ -208,6 +209,17 @@ beforeAll(async () => {
       [ORG_A],
     )
   ).rows[0].id;
+  // Segundo número da MESMA organização: a trava `prospecting_one_running_canal`
+  // (#3896) permite uma campanha `running` por número, não por organização.
+  // A campanha de origem "rodando mover" precisa estar `running` de verdade e,
+  // por isso, de um número próprio — senão o próprio fixture viola a trava que
+  // a suíte mede.
+  canalB = (
+    await pool.query(
+      "insert into channel_sessions(organization_id,waha_session_name,status,webhook_secret_encrypted) values($1,gen_random_uuid()::text,'WORKING',decode('00','hex')) returning id",
+      [ORG_A],
+    )
+  ).rows[0].id;
 
   // --- adjust_approach: nasce SEM `fonte_da_abordagem`, como a configuração de antes da chave.
   await campanha(PAUSADA, ORG_A, "pausada", "paused", CONFIG);
@@ -221,7 +233,7 @@ beforeAll(async () => {
 
   // --- move_list
   await campanha(ORIGEM, ORG_A, "Campinas", "paused", CONFIG, BUSCA);
-  await campanha(ORIGEM_RODANDO, ORG_A, "rodando mover", "running", CONFIG, BUSCA);
+  await campanha(ORIGEM_RODANDO, ORG_A, "rodando mover", "running", { ...CONFIG, channel_session_id: canalB }, BUSCA);
   await campanha(ORIGEM_RASCUNHO, ORG_A, "rascunho mover", "draft", null, BUSCA);
   await campanha(ORIGEM_CONCLUIDA, ORG_A, "concluída", "completed", CONFIG, BUSCA);
   await campanha(ORIGEM_DA_ORG_B, ORG_B, "da B", "paused", CONFIG, BUSCA);
