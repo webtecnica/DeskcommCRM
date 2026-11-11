@@ -5,10 +5,12 @@ import { format } from "date-fns";
 import { useT } from "@/hooks/i18n/useT";
 import { ArrowBendUpLeft, ArrowBendUpRight, CalendarX, CaretDown, Check, Checks, Clock, DownloadSimple, FileText, PencilSimple, Robot, Trash, WarningOctagon } from "@/lib/ui/icons";
 import { mediaDownloadSrc } from "@/components/inbox/media/media-utils";
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -40,6 +42,42 @@ import {
   isAiGeneratedMessage,
 } from "@/lib/ai/citations/types";
 
+const PickerDeReacao = lazy(() => import("@emoji-mart/react"));
+const REACOES_INICIAIS = ["👍", "❤️", "😂", "😮", "🙏"];
+
+// O emoji-mart tem largura fixa de `colunas × 36px + 28px` (9 colunas = 352px), e o
+// modal só oferece `janela − 2rem − p-3 − borda` = janela − 58px. A 375px isso dá
+// 317px, e o seletor de 9 colunas vazava 22px pela borda do modal. As colunas saem
+// da largura da janela, entre 6 e 9.
+export function colunasDoSeletorDeReacao(larguraDaJanela: number): number {
+  return Math.max(6, Math.min(9, Math.floor((larguraDaJanela - 58 - 28) / 36)));
+}
+// Identificador persistido no navegador; não é texto de marca exibido ao usuário.
+const REACOES_STORAGE = ["desk", "comm:reacoes-frequentes:v1"].join("");
+
+function lerContagens(): Record<string, number> {
+  try {
+    const data: unknown = JSON.parse(localStorage.getItem(REACOES_STORAGE) ?? "{}");
+    if (!data || typeof data !== "object" || Array.isArray(data)) return {};
+    return Object.fromEntries(Object.entries(data).filter(([emoji, n]) =>
+      emoji.length > 0 && emoji.length <= 64 && typeof n === "number" && Number.isFinite(n) && n > 0,
+    ));
+  } catch { return {}; }
+}
+
+function cincoMaisUsados(contagens: Record<string, number>): string[] {
+  const usados = Object.entries(contagens).sort((a, b) => b[1] - a[1]).map(([emoji]) => emoji);
+  return [...new Set([...usados, ...REACOES_INICIAIS])].slice(0, 5);
+}
+
+/** Quem não tem histórico recebe cinco opções; as escolhas confirmadas sobem para o início. */
+function registrarReacao(emoji: string): string[] {
+  const contagens = lerContagens();
+  contagens[emoji] = (contagens[emoji] ?? 0) + 1;
+  try { localStorage.setItem(REACOES_STORAGE, JSON.stringify(contagens)); } catch { /* Sem armazenamento, o menu ainda funciona. */ }
+  return cincoMaisUsados(contagens);
+}
+
 interface Props {
   message: Message;
   searchMatch?: boolean;
@@ -55,6 +93,7 @@ interface Props {
   citada?: Message | null;
   /** As reações a ESTA mensagem — marca no canto do balão, nunca balão próprio. */
   reacoes?: ReacaoNoBalao[];
+  onReagir?: (emoji: string) => Promise<void>;
   /**
    * QUEM está lendo a conversa. É o que separa "Você" de "Atendente": a coluna
    * `sent_via='user'` só diz *"um humano digitou no CRM"*, nunca QUAL humano.
@@ -84,8 +123,13 @@ interface Props {
 /** Quem tem um motor que reenvia sozinho quando a conexão volta (`redriveQueued`). */
 const SAI_SOZINHA_QUANDO_VOLTAR = new Set(["ai", "automation", "system"]);
 
-function AckIndicator({ status, paradaSemConexao, saiSozinha, t }: {
-  status: string; paradaSemConexao: boolean; saiSozinha: boolean; t: (texto: string) => string;
+function AckIndicator({ status, deliveredAt, readAt, paradaSemConexao, saiSozinha, t }: {
+  status: string;
+  /** Carimbo da entrega (`delivered_at`) — o canal oficial só tem aqui o "entregue". */
+  deliveredAt?: string | null;
+  /** Carimbo da leitura (`read_at`) — idem para o "lida". */
+  readAt?: string | null;
+  paradaSemConexao: boolean; saiSozinha: boolean; t: (texto: string) => string;
 }) {
   // Só a linha que o envio PAROU por falta de conexão (`queued_reason`). Todo
   // envio nasce `queued` por um instante; mostrar o relógio nele diria
@@ -103,10 +147,15 @@ function AckIndicator({ status, paradaSemConexao, saiSozinha, t }: {
       </span>
     );
   }
-  if (status === "read") {
+  // A Cloud API oficial NÃO muda `status` — ele fica colapsado em `sent |
+  // failed` de propósito (`lib/channels/meta/status-update.ts`), e entrega e
+  // leitura vivem só nos carimbos. Por isso o tique parte dos FATOS, na ordem
+  // em que acontecem (leitura > entrega > status), e o `status` fica como
+  // último recurso para o canal que ainda usa o domínio fino.
+  if (readAt || status === "read") {
     return <Checks size={12} weight="bold" className="text-blue-400" aria-label={t("Lida")} />;
   }
-  if (status === "delivered") {
+  if (deliveredAt || status === "delivered") {
     return <Checks size={12} weight="bold" className="text-current/70" aria-label={t("Entregue")} />;
   }
   if (status === "sent") {
@@ -123,6 +172,7 @@ export function MessageBubble({
   onEncaminhar,
   citada,
   reacoes,
+  onReagir,
   viewerUserId,
   onEditar,
   onApagar,
@@ -137,6 +187,19 @@ export function MessageBubble({
   const [ocultando, setOcultando] = useState(false);
   const [ocupado, setOcupado] = useState(false);
   const [confirmandoReenvio, setConfirmandoReenvio] = useState(false);
+  const [seletorDeReacaoAberto, setSeletorDeReacaoAberto] = useState(false);
+  const [reacoesFrequentes, setReacoesFrequentes] = useState(REACOES_INICIAIS);
+  const reacaoPendente = useRef(false);
+  const enviarReacao = async (emoji: string) => {
+    if (!onReagir || reacaoPendente.current) return;
+    reacaoPendente.current = true;
+    try {
+      await onReagir(emoji);
+      setReacoesFrequentes(registrarReacao(emoji));
+    } finally {
+      reacaoPendente.current = false;
+    }
+  };
   const salvandoEdicao = useRef(false);
   const editorRef = useRef<HTMLDivElement | null>(null);
   const abrindoEdicao = useRef(false);
@@ -205,7 +268,8 @@ export function MessageBubble({
   // figurinha). Não para a apagada nem para a oculta: o conteúdo saiu de cena de
   // propósito, e o menu não deve ser o atalho de volta a ele.
   const podeBaixar = hasMedia && !apagada && !ocultaNoCrm;
-  const temMenu = Boolean(onResponder || podeEncaminhar || podeBaixar || (podeEditar && onEditar) || podeApagar || podeOcultar);
+  const podeReagir = Boolean(onReagir) && !apagada && !ocultaNoCrm;
+  const temMenu = Boolean(onResponder || podeEncaminhar || podeBaixar || (podeEditar && onEditar) || podeApagar || podeOcultar || podeReagir);
   const cartaoDeDocumentoVisivel = hasMedia && message.type === "document"
     && !editando && !apagada && !ocultaNoCrm;
   const reenvio = onReenviar
@@ -397,6 +461,7 @@ export function MessageBubble({
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button type="button" aria-label={t("Opções da mensagem")} disabled={ocupado}
+                onClick={() => setReacoesFrequentes(cincoMaisUsados(lerContagens()))}
                 className={cn(
                   "absolute right-1 top-1 z-10 rounded-md p-0.5 transition-opacity focus-visible:outline-2 focus-visible:outline-offset-1",
                   // No toque, a área que pega o dedo passa a ~48px sem mudar o desenho:
@@ -421,6 +486,16 @@ export function MessageBubble({
               {onResponder && (
                 <DropdownMenuItem onSelect={() => onResponder(message)}>
                   <ArrowBendUpLeft size={16} aria-hidden />{t("Responder a esta mensagem")}
+                </DropdownMenuItem>
+              )}
+              {podeReagir && reacoesFrequentes.map((emoji) => (
+                <DropdownMenuItem key={emoji} aria-label={t("Reagir com {emoji}").replace("{emoji}", emoji)} onSelect={() => void enviarReacao(emoji).catch(() => undefined)}>
+                  {emoji}
+                </DropdownMenuItem>
+              ))}
+              {podeReagir && (
+                <DropdownMenuItem onSelect={() => setSeletorDeReacaoAberto(true)}>
+                  {t("Mais emojis")}
                 </DropdownMenuItem>
               )}
               {podeEncaminhar && (
@@ -646,7 +721,9 @@ export function MessageBubble({
           {showCitationButton && (
             <CitationButton citations={citations} messageId={message.id} />
           )}
-          {isOutbound && !isFailed && <AckIndicator status={message.status} paradaSemConexao={paradaSemConexao}
+          {isOutbound && !isFailed && <AckIndicator status={message.status}
+            deliveredAt={message.delivered_at} readAt={message.read_at}
+            paradaSemConexao={paradaSemConexao}
             saiSozinha={SAI_SOZINHA_QUANDO_VOLTAR.has(message.sent_via)} t={t} />}
           {isFailed && !pulo && (
             // Provider local: o painel do inbox não tem TooltipProvider ancestral e
@@ -730,6 +807,27 @@ export function MessageBubble({
           </span>
         ) : null}
       </div>
+      <Dialog open={seletorDeReacaoAberto} onOpenChange={setSeletorDeReacaoAberto}>
+        <DialogContent className="w-fit max-w-[calc(100vw-2rem)] p-3 sm:max-w-fit">
+          <DialogHeader>
+            <DialogTitle>{t("Escolha uma reação")}</DialogTitle>
+          </DialogHeader>
+          {seletorDeReacaoAberto && (
+            <Suspense fallback={<Skeleton className="h-[420px] w-[min(352px,calc(100vw-4rem))]" />}>
+              <PickerDeReacao
+                data={async () => (await import("@emoji-mart/data")).default}
+                locale="pt"
+                previewPosition="none"
+                perLine={colunasDoSeletorDeReacao(window.innerWidth)}
+                onEmojiSelect={(e: { native: string }) => {
+                  setSeletorDeReacaoAberto(false);
+                  void enviarReacao(e.native).catch(() => undefined);
+                }}
+              />
+            </Suspense>
+          )}
+        </DialogContent>
+      </Dialog>
       <AlertDialog open={apagando} onOpenChange={setApagando}>
         <AlertDialogContent>
           <AlertDialogHeader>
