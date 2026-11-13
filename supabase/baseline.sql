@@ -9584,10 +9584,7 @@ alter table public.channel_sessions
 alter table public.channel_sessions
   add constraint channel_sessions_provider_check
   -- 'wacalls' (0233), 'zernio_social' (0368), 'datafy' (0387) e
-  -- 'google_business' (9364) somados AQUI — UM bloco só por constraint (não
-  -- duplicar drop+add por migration). O Google entra pelo canal DIRETO, sem
-  -- intermediário, e é o par banco × TypeScript que
-  -- `tests/invariants/channel-provider-schema.test.ts` cobra.
+  -- 'google_business' (9364) somados AQUI — UM bloco só por constraint.
   check (provider = any (array['waha'::text, 'meta_cloud'::text, 'zernio'::text, 'wacalls'::text, 'zernio_social'::text, 'datafy'::text, 'google_business'::text]));
 
 alter table public.channel_sessions
