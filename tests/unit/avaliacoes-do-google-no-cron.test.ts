@@ -24,10 +24,11 @@
  * aqui ela é substituída por um par base64 simétrico — o que se prova é o
  * FLUXO (grava cifrado, lê, renova, funde), não o AES, que já tem prova própria.
  */
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { ESCOPO_DE_AVALIACOES } from "@/lib/channels/google-business/avaliacoes";
+import { logger } from "@/lib/logger";
 import {
   JANELA_DE_RENOVACAO_MS,
   registrarConsentimento,
@@ -39,10 +40,12 @@ import {
 } from "@/app/api/v1/cron/avaliacoes-do-google/route";
 
 // A trilha de auditoria e o log não são o objeto desta suíte; sem o dublê eles
-// tentariam falar com o Supabase e com o console durante a prova.
+// tentariam falar com o Supabase e com o console durante a prova. O `info` é
+// espião porque "registra o motivo" é critério da fatia: sem espião, um
+// `console.log` mudo passaria igual.
 vi.mock("@/lib/audit", () => ({ audit: async () => {} }));
 vi.mock("@/lib/logger", () => ({
-  logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
 const AGORA = new Date("2026-11-13T12:00:00.000Z");
@@ -356,6 +359,13 @@ async function comConsentimento(
 }
 
 describe("o cron das avaliações chama a sincronização", () => {
+  beforeEach(() => {
+    // Os espiões do log são por prova: sem limpar, a chamada de um caso
+    // anterior satisfaria a asserção do seguinte e o teste passaria sem que a
+    // rodada tivesse registrado nada.
+    vi.clearAllMocks();
+  });
+
   it("uma avaliação do Google vira mensagem na Central — o EFEITO, não a chamada", async () => {
     const banco = bancoFalso({ channel_sessions: [canal()] });
     await comConsentimento(banco.db, ORG);
@@ -423,6 +433,12 @@ describe("o cron das avaliações chama a sincronização", () => {
     expect(resumo.sincronizadas).toBe(0);
     expect(estado.chamadas).toHaveLength(0);
     expect(banco.tabelas.messages).toHaveLength(0);
+    // "Registra o motivo" é critério da fatia, não consolo: o log diz QUAL
+    // organização e QUAL sessão ficaram de fora, e por quê.
+    expect(vi.mocked(logger.info)).toHaveBeenCalledWith(
+      "avaliacoes.google.sem_consentimento",
+      expect.objectContaining({ organization_id: ORG, channel_session_id: CANAL }),
+    );
   });
 
   it("sem o par OAuth da instalação a rodada não varre nada", async () => {
