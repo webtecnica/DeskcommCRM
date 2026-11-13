@@ -91,6 +91,7 @@ export const RECURSOS_DO_CRON = [
   "lembrete_de_tarefa",
   "lembrete_de_agenda",
   "roteamento",
+  "avaliacoes_do_google",
 ] as const;
 export type RecursoDoCron = (typeof RECURSOS_DO_CRON)[number];
 
@@ -199,6 +200,16 @@ const TETO_DA_LEITURA_MS = 2_000;
  * aqui não há "mais largo que a rodada": é o mesmo predicado, porque alargar
  * manteria a rota acordada para sempre — o `processing` de um handler normal é
  * trabalho de OUTRO consumidor, e é justamente o que a rodada também ignora.
+ *
+ * ─── AS AVALIAÇÕES DO PERFIL DA EMPRESA (#3510) ─────────────────────────────
+ *
+ * `avaliacoes_do_google` é a condição EXATA da varredura da rota: sessão do
+ * canal não arquivada com o escopo (conta e local) gravado no `metadata`. A
+ * ausência de consentimento NÃO fecha o portão de propósito — a rodada precisa
+ * rodar para registrar "esta organização não autorizou", que é o motivo que o
+ * operador vê; fechar aqui esconderia justamente o diagnóstico que falta.
+ *
+ * Custa uma consulta por hora (a rota é horária), não por minuto.
  *
  * Duas rodadas fazem MAIS do que a consulta principal, e o portão cobre as duas
  * (medido em `tests/invariants/piso-ocioso-retrato.test.ts`):
@@ -343,7 +354,13 @@ select
          (status = 'pending' and (next_attempt_at is null or next_attempt_at <= now()))
          or (status = 'processing' and updated_at <= now() - interval '5 minutes')
        )
-  ) as roteamento
+  ) as roteamento,
+  exists (
+    select 1 from channel_sessions
+     where provider = 'google_business'
+       and archived_at is null
+       and metadata ? 'google_business_escopo'
+  ) as avaliacoes_do_google
 `;
 
 type Retrato = { emUso: Record<RecursoDoCron, boolean>; ate: number };

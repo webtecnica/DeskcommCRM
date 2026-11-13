@@ -1254,6 +1254,11 @@ export const AUDIT_ACTIONS = [
   "cobranca.org_suspensa",
   "cobranca.org_reativada",
   "cobranca.rodada",
+  // A rodada das avaliações do Perfil da Empresa (#3510). Só audita quando
+  // sincronizou alguma coisa: varredura que encontrou só organizações sem
+  // consentimento não é mutação, e a contagem de `novas`/`repetidas` é o que
+  // distingue a primeira leitura da reentrega idempotente.
+  "avaliacoes.google.rodada",
   "cobranca.regua_salva",
   // #2609, a conferência da releitura: o preço da assinatura NO PROVEDOR
   // divergiu do preço do PLANO gravado (metadata com os DOIS números, o plano e

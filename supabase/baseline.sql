@@ -75057,6 +75057,55 @@ create trigger trg_routing_nova_mensagem_do_cliente
         and coalesce(new.metadata->>'historico_importado','') <> 'true')
   execute function public.fn_pedir_roteamento_na_mensagem();
 
+-- ---- o consentimento do Perfil da Empresa, por organização (migration 9365) ----
+-- Espelho de supabase/migrations/20261113130336_9365_avaliacoes_do_google_consentimento_por_organizacao.sql.
+-- O porquê inteiro está no cabeçalho dela; em uma linha: o app OAuth é da
+-- instalação, mas o acesso às avaliações é de CADA empresa, e guardar um token
+-- por instalação faria a segunda empresa ler as avaliações da primeira. Tokens
+-- cifrados por `fn_encrypt_oauth`, RLS ligada sem policy (server-side only) e a
+-- recusa do Google vira `status = 'reautorizar'` + `ultimo_erro` — nunca
+-- exclusão da linha, que é o registro de que a empresa autorizou.
+-- Não cria função: só a tabela e o gatilho de `updated_at` (que usa a
+-- `fn_set_updated_at` já existente). Entra antes da VARREDURA anon e antes do
+-- bloco de dados da 9243, fora do recorte comparado por
+-- `tests/invariants/lgpd-alcanca-fichas-fundidas.test.ts`.
+create table if not exists public.google_business_consentimentos (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  refresh_token_encrypted text,
+  access_token_encrypted text,
+  escopos text[] not null default '{}'::text[],
+  expira_em timestamptz,
+  status text not null default 'ativo',
+  ultimo_erro text,
+  autorizado_em timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint google_business_consentimentos_status_check
+    check (status in ('ativo', 'reautorizar')),
+  constraint google_business_consentimentos_token_check
+    check (refresh_token_encrypted is not null or status = 'reautorizar')
+);
+
+create unique index if not exists google_business_consentimentos_org_uk
+  on public.google_business_consentimentos (organization_id);
+
+create index if not exists google_business_consentimentos_renovacao_idx
+  on public.google_business_consentimentos (expira_em)
+  where status = 'ativo';
+
+comment on table public.google_business_consentimentos is
+  'Consentimento do Perfil da Empresa do Google POR ORGANIZAÇÃO (#3510): refresh token cifrado, escopo concedido e validade do access token. Server-side only: RLS ligada sem policy e nenhum privilégio para anon/authenticated. A recusa do Google vira status = reautorizar + ultimo_erro, nunca exclusão da linha.';
+
+alter table public.google_business_consentimentos enable row level security;
+
+revoke all on public.google_business_consentimentos from anon, authenticated;
+grant select, insert, update, delete on public.google_business_consentimentos to service_role;
+
+drop trigger if exists trg_google_business_consentimentos_updated_at on public.google_business_consentimentos;
+create trigger trg_google_business_consentimentos_updated_at
+  before update on public.google_business_consentimentos
+  for each row execute function public.fn_set_updated_at();
+
 -- ---- anonimizar alcança as fichas fundidas: a cascata (migration 9243) ----
 -- Espelho de supabase/migrations/20261107120001_9243_anonimizar_alcanca_fichas_fundidas.sql.
 -- O bloco de dados está no fim do arquivo: precisa de todos os gatilhos de anonimização criados.

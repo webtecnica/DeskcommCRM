@@ -169,6 +169,15 @@ CRONS="
 # pagar, e a diferença entre nascer às 5h ou às 17h não muda nada para quem paga.
 # Barato: uma consulta por instalação, e quem não tem molde nenhum sai na hora.
 50 5 * * *|60|api/v1/cron/recurring-entries
+# AS AVALIAÇÕES DO PERFIL DA EMPRESA (#3510). De hora em hora: avaliação não é
+# mensagem, e a cota da API do Google é por projeto — varrer de 5 em 5 minutos
+# gastaria doze vezes a mesma leitura para descobrir o mesmo nada. Minuto 41,
+# fora das outras varreduras horarias (23, 37 e 43). O teto de 120 s cobre o
+# orçamento de 45 s da própria rota (corte por tempo) com folga para renovar o
+# token e fechar a resposta. Barata quando não há o que fazer: o portão do piso
+# ocioso (`avaliacoes_do_google`) sai antes de qualquer ida ao PostgREST, e a
+# chave do módulo vem desligada por padrão.
+41 * * * *|120|api/v1/cron/avaliacoes-do-google
 "
 
 # CRONTAB_PATH é ponto de injeção do teste (tests/shell/scheduler-entrypoint.test.sh).

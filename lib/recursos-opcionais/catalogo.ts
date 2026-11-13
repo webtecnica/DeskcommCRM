@@ -193,13 +193,14 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
     nome: "Campanha por e-mail (em construção)",
     oQueFaz: "A base da campanha por e-mail: assunto, corpo e público. Ainda não pode ser ligada, porque falta o envio com descadastro.",
   },
-  // #3510 (fatia 1): o canal das avaliações do Perfil da Empresa. A frase não
-  // promete sincronização — a busca periódica é fatia seguinte; o que a chave
-  // liga hoje é a criação da sessão do canal.
+  // #3510 (fatias 1 e 2): o canal das avaliações do Perfil da Empresa e a busca
+  // periódica que o alimenta. A chave liga a criação da sessão do canal E a
+  // rodada horária do cron (`avaliacoes-do-google`), que só chama o Google para
+  // a empresa que autorizou.
   google_business: {
     nome: "Avaliações do Google Business",
     oQueFaz:
-      "O canal das avaliações do Perfil da Empresa do Google na Central de atendimento. Vem desligado, e a leitura depende do projeto Google configurado nesta instalação.",
+      "As avaliações do Perfil da Empresa do Google chegam à Central de atendimento e são buscadas de hora em hora. Vem desligado, e a leitura depende do projeto Google configurado nesta instalação e do consentimento de cada empresa.",
   },
 };
 

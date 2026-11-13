@@ -21147,8 +21147,8 @@ export const DICIONARIO: Traducoes = {
   "Não cria porta no menu do CRM: a conexão aparece em Conexões, e o canal nasce de lá.": {
     es: "No crea una puerta en el menú del CRM: la conexión aparece en Conexiones, y el canal nace desde allí.",
   },
-  "O canal das avaliações do Perfil da Empresa do Google na Central de atendimento. Vem desligado, e a leitura depende do projeto Google configurado nesta instalação.": {
-    es: "El canal de las reseñas del Perfil de Empresa de Google en la Central de atención. Viene desactivado, y la lectura depende del proyecto de Google configurado en esta instalación.",
+  "As avaliações do Perfil da Empresa do Google chegam à Central de atendimento e são buscadas de hora em hora. Vem desligado, e a leitura depende do projeto Google configurado nesta instalação e do consentimento de cada empresa.": {
+    es: "Las reseñas del Perfil de Empresa de Google llegan a la Central de atención y se buscan cada hora. Viene desactivado, y la lectura depende del proyecto de Google configurado en esta instalación y del consentimiento de cada empresa.",
   },
 };
 

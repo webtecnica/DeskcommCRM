@@ -18,6 +18,9 @@
  *      futuro o portão fechava e o aviso ficava aberto na Central;
  *    - `mcp-oauth-revogacao` poda os pedidos de autorização vencidos há mais de
  *      um dia. Sem credencial vencida o portão fechava e a poda não rodava.
+ *    - `avaliacoes-do-google` (#3510) só busca quando existe sessão do canal do
+ *      Perfil da Empresa com conta e local gravados; o predicado é essa mesma
+ *      condição, para a rodada não acordar por causa de sessão arquivada.
  *
  * Roda só no CI e em `pnpm test:db` (precisa de Postgres).
  */
@@ -47,6 +50,7 @@ const FILAS: RecursoDoCron[] = [
   "lembrete_de_tarefa",
   "lembrete_de_agenda",
   "roteamento",
+  "avaliacoes_do_google",
 ];
 
 async function leitura(recurso: RecursoDoCron): Promise<boolean> {
@@ -237,5 +241,53 @@ describe("retrato do piso ocioso contra o baseline", () => {
       await pool.query("delete from mcp_oauth_pedidos where id = $1", [id]);
     }
     expect(await leitura("mcp_a_revogar")).toBe(false);
+  });
+
+  it("sessão do Perfil da Empresa viva mantém a rodada das avaliações acordada; arquivada não", async () => {
+    // #3510: o predicado é EXATAMENTE a condição da varredura — sessão do canal
+    // não arquivada com conta/local gravados.
+    //
+    // "Sem escopo" não é um caso testável: o CHECK
+    // `channel_sessions_provider_ref_check` (migration 9364) RECUSA linha de
+    // `google_business` sem `metadata ? 'google_business_escopo'`. O banco
+    // proíbe o estado, então o `metadata ?` do retrato é defesa em profundidade,
+    // não o que separa a rodada do trabalho inútil — e o teste mede isso
+    // também, na recusa.
+    const semEscopo = randomUUID();
+    const comEscopo = randomUUID();
+    const arquivada = randomUUID();
+    const inserir = (id: string, metadata: string, archivedAt: string | null) =>
+      semFk(
+        // `$1` é uuid: repetir o parâmetro em `waha_session_name` faria o
+        // Postgres deduzir dois tipos para o mesmo `$1`. Daí o `$5`.
+        `insert into channel_sessions
+           (id, organization_id, provider, waha_session_name, webhook_secret_encrypted, metadata, archived_at)
+         values ($1, $2, 'google_business', $5::text, '\\x00', $3::jsonb, $4::timestamptz)`,
+        [id, randomUUID(), metadata, archivedAt, id],
+      );
+    const escopo = JSON.stringify({ google_business_escopo: "accounts/1/locations/2" });
+
+    try {
+      // O estado perigoso não existe: o banco o recusa antes de o retrato vê-lo.
+      await expect(inserir(semEscopo, JSON.stringify({}), null)).rejects.toThrow(
+        /channel_sessions_provider_ref_check/,
+      );
+
+      await inserir(arquivada, escopo, new Date().toISOString());
+      expect(await leitura("avaliacoes_do_google")).toBe(false);
+
+      await inserir(comEscopo, escopo, null);
+      expect(await leitura("avaliacoes_do_google")).toBe(true);
+
+      // controle: é o arquivamento que fecha o portão, não a existência da linha
+      await pool.query("update channel_sessions set archived_at = now() where id = $1", [comEscopo]);
+      expect(await leitura("avaliacoes_do_google")).toBe(false);
+      await pool.query("update channel_sessions set archived_at = null where id = $1", [comEscopo]);
+      expect(await leitura("avaliacoes_do_google")).toBe(true);
+    } finally {
+      await pool.query("delete from channel_sessions where id = any($1::uuid[])", [
+        [semEscopo, comEscopo, arquivada],
+      ]);
+    }
   });
 });
