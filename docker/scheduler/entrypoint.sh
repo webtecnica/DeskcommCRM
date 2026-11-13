@@ -175,7 +175,7 @@ CRONS="
 # fora das outras varreduras horarias (23, 37 e 43). O teto de 120 s cobre o
 # orçamento de 45 s da própria rota (corte por tempo) com folga para renovar o
 # token e fechar a resposta. Barata quando não há o que fazer: o portão do piso
-# ocioso (`avaliacoes_do_google`) sai antes de qualquer ida ao PostgREST, e a
+# ocioso (avaliacoes_do_google) sai antes de qualquer ida ao PostgREST, e a
 # chave do módulo vem desligada por padrão.
 41 * * * *|120|api/v1/cron/avaliacoes-do-google
 "
