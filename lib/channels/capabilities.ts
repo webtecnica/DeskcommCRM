@@ -276,8 +276,15 @@ export function transportaMensagem(provider: string | null | undefined): boolean
  * `transportaMensagem` responde `false` para os dois, e é o que se quer lá: na
  * hora de escolher por onde mandar recado, o desconhecido é tão inútil quanto a
  * voz. Aqui a pergunta é outra.
+ *
+ * `google_business` (migration 9364, #3510) entra pelo mesmo motivo que o
+ * `wacalls`, com outra natureza: a linha de `channel_sessions` existe (o canal
+ * que recebe as avaliações do Perfil da Empresa), mas este código ainda não
+ * envia nada por ela — responder avaliação é fatia posterior. Um vigia de
+ * conexão batendo nessa sessão a cada minuto daria aviso perpétuo sobre um
+ * canal que não tem o que vigiar.
  */
-export const PROVIDERS_SEM_MENSAGEM = ["wacalls"] as const;
+export const PROVIDERS_SEM_MENSAGEM = ["wacalls", "google_business"] as const;
 
 /**
  * Erro de COMPILAÇÃO enquanto sobrar provider fora das duas listas. Provider

@@ -7,7 +7,8 @@ import { lerLimiteEstourado } from "@/lib/cobranca/limites";
 import { fecharAvisoDePausaDoCanalArquivado } from "@/lib/channels/central-de-pausa";
 import { resolverSaudeDaConexaoRemovida } from "@/lib/channels/health";
 import { logger } from "@/lib/logger";
-import { inboxSupported, SOCIAL_PROVIDER } from "./catalog";
+import { moduloLigado } from "@/lib/instalacao/modulos";
+import { inboxSupported, moduloDoCanal, SOCIAL_PROVIDER } from "./catalog";
 import { listSocialAccounts, socialRequest, SocialError } from "./client";
 
 export async function readSocialIntegration(db: SupabaseClient, org: string) {
@@ -142,6 +143,33 @@ export async function socialChannels(db: SupabaseClient, org: string) {
     metadata: row.metadata as Record<string, unknown>,
   }));
 }
+/**
+ * O gate do MÓDULO opcional na criação da sessão do canal.
+ *
+ * Existe porque "desligado por padrão" não pode ser um comentário: com a chave
+ * ausente em `platform_config`, `moduloLigado` devolve `false` e esta função
+ * RECUSA a conexão — antes de qualquer chamada à rede. Sem o gate, a tela
+ * criaria a sessão de um módulo que a instalação não ligou, e o "desligado por
+ * padrão" seria só um padrão de leitura, não de comportamento.
+ *
+ * Rede sem módulo declarado passa direto e **sem consultar o banco**: o mapa
+ * `MODULO_DO_CANAL` é vazio para tudo que não é o Google Business, e fazer um
+ * `select` por conexão de Instagram seria pagar latência por uma resposta que
+ * já se sabe.
+ */
+export async function garantirModuloDoCanal(
+  db: SupabaseClient,
+  plataforma: string,
+): Promise<void> {
+  const modulo = moduloDoCanal(plataforma);
+  if (!modulo) return;
+  if (await moduloLigado(db, modulo)) return;
+  throw new SocialError(
+    "O módulo de avaliações do Google está desligado nesta instalação. Ligue-o em Sistema › Módulos antes de conectar o canal.",
+    422,
+  );
+}
+
 export async function connectSocialInbox(
   db: SupabaseClient,
   org: string,
@@ -156,6 +184,7 @@ export async function connectSocialInbox(
     throw new SocialError("Conta ausente ou desconectada neste perfil.", 422);
   if (!inboxSupported(account.platform))
     throw new SocialError("O atendimento desta rede ainda não está disponível no CRM.", 422);
+  await garantirModuloDoCanal(db, account.platform);
   const existing = (await socialChannels(db, org)).find((c) => c.accountId === accountId);
   if (existing?.metadata.social_webhook_id && existing.status === "WORKING")
     return { channel_id: existing.id, already_connected: true };

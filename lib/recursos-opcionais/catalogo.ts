@@ -193,6 +193,14 @@ const TEXTO_DO_MODULO: Record<ModuloOpcional, { nome: string; oQueFaz: string }>
     nome: "Campanha por e-mail (em construção)",
     oQueFaz: "A base da campanha por e-mail: assunto, corpo e público. Ainda não pode ser ligada, porque falta o envio com descadastro.",
   },
+  // #3510 (fatia 1): o canal das avaliações do Perfil da Empresa. A frase não
+  // promete sincronização — a busca periódica é fatia seguinte; o que a chave
+  // liga hoje é a criação da sessão do canal.
+  google_business: {
+    nome: "Avaliações do Google Business",
+    oQueFaz:
+      "O canal das avaliações do Perfil da Empresa do Google na Central de atendimento. Vem desligado, e a leitura depende do projeto Google configurado nesta instalação.",
+  },
 };
 
 /**

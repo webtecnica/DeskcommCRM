@@ -36,7 +36,7 @@
  * envelhece. Quem for ligar a conexão direta sabe, pela leitura do modelo, que o
  * primeiro passo é um valor no CHECK — migration, e portanto PR próprio.
  */
-import type { ProviderDeMensagem } from "../types";
+import type { ChannelProvider, ProviderDeMensagem } from "../types";
 import { redeSocial, SOCIAL_PROVIDER, type PortaSocialId } from "./catalog";
 
 /**
@@ -65,6 +65,19 @@ export interface PortaSocial {
    * existe adapter a montar".
    */
   providerNoBanco: ProviderDeMensagem | null;
+  /**
+   * O valor por REDE, quando a porta é compartilhada por redes que NÃO têm o
+   * mesmo transporte.
+   *
+   * `providerNoBanco` é da PORTA, e isso é o certo para `intermediada`: todas
+   * as redes passam pelo mesmo parceiro e gravam o mesmo valor. Em `direta` não
+   * vale: o Google Business fala direto com a plataforma dele, Instagram e
+   * Facebook não falam direto com nada. Dar `google_business` ao
+   * `providerNoBanco` da porta faria as outras duas alegarem conexão direta que
+   * não existe, e o adapter montaria com um provider que elas não têm. O valor
+   * é do par (rede, porta), e por isso mora aqui.
+   */
+  providerNoBancoPorRede?: Readonly<Partial<Record<string, ChannelProvider>>>;
   /** O que a porta exige, na ordem em que a falta deve ser lida. */
   exige: readonly ExigenciaDaPorta[];
   /** Existe transporte para esta porta NESTE código? */
@@ -87,6 +100,9 @@ export const PORTAS_SOCIAIS: Record<PortaSocialId, PortaSocial> = {
     id: "direta",
     rotulo: "conexão direta",
     providerNoBanco: null,
+    // Só o Google tem transporte direto declarado hoje; as outras redes nesta
+    // porta continuam sem valor, e é isso que `providerNoBancoDaPorta` devolve.
+    providerNoBancoPorRede: { googlebusiness: "google_business" },
     exige: ["conta_autorizada", "credencial_da_conta"],
     implementada: false,
   },
@@ -162,6 +178,31 @@ export function portaDaRede(plataforma: string, porta?: PortaSocialId): PortaSoc
  */
 export function portaDisponivel(plataforma: string): PortaSocial | null {
   return portasDaRede(plataforma).find((p) => p.implementada) ?? null;
+}
+
+/**
+ * O valor que esta porta grava em `channel_sessions.provider` para ESTA rede.
+ *
+ * Duas leituras, nesta ordem: o mapa por rede primeiro (`providerNoBancoPorRede`,
+ * que é onde o Google Business mora na porta `direta`) e o valor da porta depois
+ * (`providerNoBanco`, que é o do parceiro). A ordem é a informação: se o valor
+ * da porta viesse primeiro, nenhuma rede conseguiria divergir dela — e é
+ * exatamente divergir que o Google precisa.
+ *
+ * `null` significa "esta rede não tem provider neste banco" — e, pelo contrato
+ * de `ChannelAdapter`, "não há adapter a montar". Um `null` aqui NÃO é erro: é
+ * a resposta honesta para Instagram e Facebook na conexão direta, que ainda não
+ * existe neste código.
+ */
+export function providerNoBancoDaPorta(
+  porta: PortaSocial,
+  plataforma?: string,
+): ChannelProvider | null {
+  if (plataforma) {
+    const porRede = porta.providerNoBancoPorRede?.[plataforma];
+    if (porRede) return porRede;
+  }
+  return porta.providerNoBanco;
 }
 
 /**

@@ -167,6 +167,10 @@ describe("ondeOModuloAparece: a tela pode dizer o que ligar vai mudar", () => {
       "reservas_de_lugar",
       "link_de_pagamento",
       "campanha_por_email",
+      // #3510: o canal do Google Business nasce da tela de Conexões, e a
+      // Central de atendimento é onde as avaliações passam a existir — não há
+      // porta própria no menu do CRM nesta fatia.
+      "google_business",
     ]);
   });
 });

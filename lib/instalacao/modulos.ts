@@ -80,6 +80,14 @@ export const MODULOS_OPCIONAIS = [
   "reservas_de_lugar",
   "link_de_pagamento",
   "campanha_por_email",
+  // #3510 (fatia 1, retomada do #3637): as avaliações do Google Business na
+  // Central. Desligado por padrão — a leitura depende do projeto Google da
+  // própria instalação e é de nicho; quem não liga não carrega o caminho nem
+  // consegue criar a sessão do canal (`garantirModuloDoCanal`, em
+  // `lib/channels/social/store.ts`). Liga só com a linha `ligado` em
+  // `platform_config` (mesma leitura dos outros módulos por flag): ausência é
+  // desligado, e o padrão mora AQUI, não numa linha semeada.
+  "google_business",
 ] as const;
 export type ModuloOpcional = (typeof MODULOS_OPCIONAIS)[number];
 
@@ -111,6 +119,7 @@ export const MODULOS_OPCIONAIS_POR_FLAG = [
   "reservas_de_lugar",
   "link_de_pagamento",
   "campanha_por_email",
+  "google_business",
 ] as const satisfies readonly ModuloOpcional[];
 
 /** A linha de cada módulo por FLAG em `platform_config`. O formato é o da CHECK da 0341.
@@ -186,6 +195,12 @@ export const CHAVE_DO_MODULO: Record<(typeof MODULOS_OPCIONAIS_POR_FLAG)[number]
   // "E-mail" não aparece na nova campanha e criar ou editar uma responde 404
   // (`decidirConteudo`, em `lib/campanhas/conteudo-do-canal.ts`).
   campanha_por_email: "MODULO_CAMPANHA_POR_EMAIL",
+  // #3510: as avaliações do Google Business na Central. Nasce DESLIGADO (sem
+  // linha em `platform_config` — `valor === "ligado"` é a única forma de ligar),
+  // e a chave é do servidor: quem revende decide se a instalação lê avaliação.
+  // Desligado, o "Receber no atendimento" do Google responde 422
+  // (`garantirModuloDoCanal`, em `lib/channels/social/store.ts`).
+  google_business: "MODULO_GOOGLE_BUSINESS",
 };
 
 const LIGADO = "ligado";

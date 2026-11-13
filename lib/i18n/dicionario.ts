@@ -21127,6 +21127,21 @@ export const DICIONARIO: Traducoes = {
   "Erro no último preparo": { es: "Error en la última preparación" },
   "Abrir no Conhecimento": { es: "Abrir en Conocimiento" },
   "Só administradores podem preparar o catálogo de novo.": { es: "Solo los administradores pueden preparar el catálogo de nuevo." },
+
+  // ─── CANAL DAS AVALIAÇÕES DO GOOGLE BUSINESS (#3510) ───
+  // O módulo e a linha do interruptor em /admin/sistema. A frase descreve o que
+  // a chave faz HOJE: libera a criação da sessão do canal; a busca periódica das
+  // avaliações é a fatia seguinte.
+  "Avaliações do Google Business": { es: "Reseñas de Google Business" },
+  "Ligado, a conta do Perfil da Empresa do Google pode virar canal de atendimento: a sessão do canal passa a poder ser criada e é nela que as avaliações ficam guardadas. A leitura usa o projeto Google configurado nesta instalação. Desligado, o Google não oferece o Receber no atendimento, e as conversas e os canais que já existem ficam guardados.": {
+    es: "Activado, la cuenta del Perfil de Empresa de Google puede convertirse en canal de atención: la sesión del canal pasa a poder crearse y es en ella donde quedan guardadas las reseñas. La lectura usa el proyecto de Google configurado en esta instalación. Desactivado, Google no ofrece el Recibir en la atención, y las conversaciones y los canales que ya existen quedan guardados.",
+  },
+  "Não cria porta no menu do CRM: a conexão aparece em Conexões, e o canal nasce de lá.": {
+    es: "No crea una puerta en el menú del CRM: la conexión aparece en Conexiones, y el canal nace desde allí.",
+  },
+  "O canal das avaliações do Perfil da Empresa do Google na Central de atendimento. Vem desligado, e a leitura depende do projeto Google configurado nesta instalação.": {
+    es: "El canal de las reseñas del Perfil de Empresa de Google en la Central de atención. Viene desactivado, y la lectura depende del proyecto de Google configurado en esta instalación.",
+  },
 };
 
 /**

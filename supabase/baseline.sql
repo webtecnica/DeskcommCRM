@@ -9583,9 +9583,12 @@ alter table public.channel_sessions
 
 alter table public.channel_sessions
   add constraint channel_sessions_provider_check
-  -- 'wacalls' (0233), 'zernio_social' (0368) e 'datafy' (0387) somados AQUI —
-  -- UM bloco só por constraint (não duplicar drop+add por migration).
-  check (provider = any (array['waha'::text, 'meta_cloud'::text, 'zernio'::text, 'wacalls'::text, 'zernio_social'::text, 'datafy'::text]));
+  -- 'wacalls' (0233), 'zernio_social' (0368), 'datafy' (0387) e
+  -- 'google_business' (9364) somados AQUI — UM bloco só por constraint (não
+  -- duplicar drop+add por migration). O Google entra pelo canal DIRETO, sem
+  -- intermediário, e é o par banco × TypeScript que
+  -- `tests/invariants/channel-provider-schema.test.ts` cobra.
+  check (provider = any (array['waha'::text, 'meta_cloud'::text, 'zernio'::text, 'wacalls'::text, 'zernio_social'::text, 'datafy'::text, 'google_business'::text]));
 
 alter table public.channel_sessions
   drop constraint if exists channel_sessions_provider_ref_check;
@@ -9598,7 +9601,12 @@ alter table public.channel_sessions
     -- é o mesmo intermediário, com outra superfície de canal.
     (provider in ('zernio', 'zernio_social') and zernio_account_id is not null) or
     (provider = 'wacalls'    and wacalls_session_id    is not null) or
-    (provider = 'datafy'     and datafy_phone_number_id is not null)
+    (provider = 'datafy'     and datafy_phone_number_id is not null) or
+    -- 'google_business' (migration 9364) endereça pelo ESCOPO do Perfil da
+    -- Empresa — a conta/location que autorizou, e de onde a leitura das
+    -- avaliações parte. Reusar `zernio_account_id` seria mentir: aquela coluna é
+    -- do intermediário, e esta porta é justamente a que dispensa intermediário.
+    (provider = 'google_business' and metadata ? 'google_business_escopo')
   );
 
 comment on column public.channel_sessions.zernio_account_id is
@@ -35567,9 +35575,13 @@ comment on column public.contacts.social_identity is
 alter table public.conversations drop constraint if exists conversations_channel_check;
 alter table public.conversations add constraint conversations_channel_check
   check (channel in ('whatsapp', 'instagram', 'facebook', 'googlebusiness'));
--- 'googlebusiness' (migration 9032, issue #3510) entra NESTE bloco, e não num
+-- 'googlebusiness' (migration 9364, issue #3510) entra NESTE bloco, e não num
 -- bloco novo: a avaliação do Google vira conversa na Central, e a doutrina é
 -- "uma constraint, um bloco" (`tests/unit/baseline-constraint-reconstruida.test.ts`).
+-- Os DOIS CHECKs de `channel_sessions.provider` desta mesma fatia
+-- (`channel_sessions_provider_check` e `channel_sessions_provider_ref_check`)
+-- entram no bloco único do provider: os três vocabulários no MESMO arquivo,
+-- porque CHECK em migration separada abre janela sem constraint no `update.sh`.
 -- Sem esta linha o primeiro INSERT de avaliação bate 23514 em toda instalação
 -- que já rodou o `update.sh` — o dump traz a lista de três valores e a última
 -- definição é a que vale.

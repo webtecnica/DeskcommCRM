@@ -9,10 +9,11 @@
  * delega; quando não tem, ele diz o que falta.
  *
  * O que ele NÃO faz, nesta fatia: implementar a conexão direta com nenhuma
- * plataforma (não há valor de provider no CHECK do banco — ver `./porta.ts`),
- * nem substituir `socialAdapter`, que continua sendo quem atende a porta
- * intermediada em produção. Nenhum ponto de produção instancia este adapter
- * ainda; ele é a peça que o #965 vai ligar.
+ * plataforma (o valor de provider por rede mora em `providerNoBancoPorRede`,
+ * em `./porta.ts`, e hoje só o Google Business tem um), nem substituir
+ * `socialAdapter`, que continua sendo quem atende a porta intermediada em
+ * produção. Nenhum ponto de produção instancia este adapter ainda; ele é a
+ * peça que o #965 vai ligar.
  *
  * ─── Por que a recusa é o produto ──────────────────────────────────────────
  *
@@ -31,6 +32,7 @@ import { redeSocial, type PortaSocialId } from "./catalog";
 import {
   exigenciasEmFalta,
   portaDaRede,
+  providerNoBancoDaPorta,
   type CredencialDaPorta,
   type ExigenciaDaPorta,
   type PortaSocial,
@@ -152,7 +154,10 @@ export function adaptadorDaPorta({
   transporte = null,
 }: OpcoesDoAdaptadorDaPorta): ChannelAdapter {
   const escolhida = portaDaRede(plataforma, porta);
-  const provider: ChannelProvider | null = escolhida.providerNoBanco;
+  // O provider é do PAR (rede, porta), não da porta: é o que deixa a `direta`
+  // ter valor para o Google Business sem que Instagram e Facebook passem a
+  // alegar conexão direta (ver `providerNoBancoPorRede` em `./porta.ts`).
+  const provider: ChannelProvider | null = providerNoBancoDaPorta(escolhida, plataforma);
   if (!provider) {
     throw new PortaSemTransporteError(plataforma, escolhida, "sem_provider_no_banco");
   }

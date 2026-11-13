@@ -399,6 +399,18 @@ export const MODULOS_NA_TELA: ReadonlyArray<{
       "Este interruptor ainda não pode ser ligado: a campanha por e-mail guarda o assunto, o corpo e o público, mas esta versão não envia o e-mail nem tem o descadastro e a lista de quem pediu para não receber. Se ele já estiver ligado, dá para desligar: a opção E-mail some da nova campanha e as campanhas já criadas ficam guardadas.",
     foraDoMenu: "Não cria porta no menu do CRM: a opção E-mail aparece dentro de Campanhas, ao criar uma nova.",
   },
+  {
+    // #3510 (fatia 1): o módulo do canal das avaliações do Perfil da Empresa.
+    // Nasce desligado, e o interruptor existe para quem administra a instalação
+    // poder ligar sem SQL — a mesma regra dos outros módulos por chave.
+    modulo: "google_business",
+    id: "modulo-google-business",
+    rotulo: "Avaliações do Google Business",
+    descricao:
+      "Ligado, a conta do Perfil da Empresa do Google pode virar canal de atendimento: a sessão do canal passa a poder ser criada e é nela que as avaliações ficam guardadas. A leitura usa o projeto Google configurado nesta instalação. Desligado, o Google não oferece o Receber no atendimento, e as conversas e os canais que já existem ficam guardados.",
+    foraDoMenu:
+      "Não cria porta no menu do CRM: a conexão aparece em Conexões, e o canal nasce de lá.",
+  },
 ];
 
 /**

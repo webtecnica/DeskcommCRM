@@ -16,7 +16,14 @@ import type { DefeitoDoNumero } from "./defeito-do-numero";
 // e o lint de canal reprovaria o caminho.
 export type { OutboundMedia, ContatoDoAparelho };
 
-export type ChannelProvider = "waha" | "meta_cloud" | "zernio" | "zernio_social" | "wacalls" | "datafy";
+// `google_business` (migration 9364, #3510) entra aqui porque o CHECK de
+// `channel_sessions.provider` fala ESTE vocabulário e o invariante
+// `tests/invariants/channel-provider-schema.test.ts` compara os dois: valor
+// aceito no banco sem membro no union derruba o `getAdapter` da sessão com
+// `unknown_channel_provider`. Ele NÃO é canal de mensagem neste código — a
+// resposta à avaliação é fatia posterior — e é por isso que fica fora de
+// `PROVIDERS_DE_MENSAGEM` (ver `./capabilities.ts`).
+export type ChannelProvider = "waha" | "meta_cloud" | "zernio" | "zernio_social" | "wacalls" | "datafy" | "google_business";
 
 /**
  * Os providers que transportam MENSAGEM — o subconjunto sobre o qual a matriz
@@ -33,7 +40,7 @@ export type ChannelProvider = "waha" | "meta_cloud" | "zernio" | "zernio_social"
  * banco já aceitava `'wacalls'` enquanto este union não — e uma organização que
  * pareasse voz derrubava `getAdapter` com `unknown_channel_provider`.
  */
-export type ProviderDeMensagem = Exclude<ChannelProvider, "wacalls">;
+export type ProviderDeMensagem = Exclude<ChannelProvider, "wacalls" | "google_business">;
 
 export interface ChannelCapabilities {
   /** Pode enviar texto livre a qualquer momento? false = exige template fora da janela. */

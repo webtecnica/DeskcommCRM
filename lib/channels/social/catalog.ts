@@ -20,6 +20,7 @@
  * O vocabulário das portas e o que cada uma exige vivem em `./porta.ts`. Este
  * arquivo é a DECLARAÇÃO; lá é o MODELO.
  */
+import type { ModuloOpcional } from "@/lib/instalacao/modulos";
 
 /**
  * As portas por onde uma rede social pode ser alcançada.
@@ -59,9 +60,21 @@ export const SOCIAL_NETWORKS = [
    * a conta autoriza e a rede fica sem afordância nenhuma na tela de Conexões,
    * que é o estado que a issue descreve como problema.
    *
+   * A porta é a `direta`, e não a `intermediada`: a conexão é com a plataforma
+   * da própria rede, pelo projeto Google de quem instala — é o desenho que o
+   * mantenedor pediu ao fechar o #3637. O valor que a sessão grava
+   * (`google_business`) mora em `providerNoBancoPorRede` da porta (`./porta.ts`),
+   * e não na porta, para Instagram e Facebook não herdarem conexão direta.
+   *
+   * `inbox: true` NÃO é o liga/desliga do módulo: ele é a declaração de
+   * capacidade, e é dele que sai o vocabulário de `conversations.channel`. Desligar
+   * a rede aqui tiraria `googlebusiness` do vocabulário e o INSERT deixaria de ser
+   * tipável; o desligamento mora na chave `google_business` de
+   * `lib/instalacao/modulos.ts`, que nasce desligada.
+   *
    * A RESPOSTA à avaliação é da fatia 2: aqui só se lê.
    */
-  { id: "googlebusiness", label: "Google Business", inbox: true, portas: ["intermediada"] },
+  { id: "googlebusiness", label: "Google Business", inbox: true, portas: ["direta"] },
   { id: "telegram", label: "Telegram", inbox: false, portas: ["intermediada"] },
   { id: "snapchat", label: "Snapchat", inbox: false, portas: ["intermediada"] },
   { id: "discord", label: "Discord", inbox: false, portas: ["intermediada"] },
@@ -110,6 +123,28 @@ export const SOCIAL_PROVIDER_LABEL = "Zernio";
 
 export const inboxSupported = (platform: string): boolean =>
   SOCIAL_NETWORKS.some((network) => network.id === platform && network.inbox);
+
+/**
+ * O módulo de INSTALAÇÃO que uma rede exige para existir no atendimento —
+ * `null` para as redes que não dependem de chave nenhuma.
+ *
+ * É a resposta para "esta rede nasce ligada?". Hoje só o Google Business tem
+ * chave (`google_business`, desligada por padrão em `lib/instalacao/modulos.ts`):
+ * as avaliações são de nicho e a leitura depende do projeto Google de quem
+ * instala, então a instalação média não deve carregar o caminho. A rede continua
+ * no catálogo (e no vocabulário do banco) — o que a chave desliga é o canal, não
+ * a declaração.
+ *
+ * O mapa mora aqui porque quem sabe QUAIS redes existem é este arquivo; o
+ * mecanismo de ligar/desligar continua em `lib/instalacao/modulos.ts`.
+ */
+const MODULO_DO_CANAL: Readonly<Partial<Record<string, ModuloOpcional>>> = {
+  googlebusiness: "google_business",
+};
+
+export function moduloDoCanal(plataforma: string): ModuloOpcional | null {
+  return MODULO_DO_CANAL[plataforma] ?? null;
+}
 
 export function socialMessageId(account: string, id: string): string {
   return `social:${account}:${id}`;
